@@ -5,3 +5,8 @@ logs/
 *.log
 dist/
 dump.rdb
+*.ndjson
+reports/
+*.zip
+*.exe
+*.dll
