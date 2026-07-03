@@ -10,3 +10,7 @@ reports/
 *.zip
 *.exe
 *.dll
+scripts-test/
+seed.ts
+aiDispatchTest.ts
+test.ts
