@@ -1,0 +1,110 @@
+Agent
+思考过程
+先说结论：fm-cli 是单进程 CLI Agent，没有用户体系、没有跨用户匹配、没有持久化多租户。这个课题的难点不在"写一个 Agent"，而在多用户状态 + 多 Agent 协作 + 跨用户匹配 + 可解释。所以 fm-cli 的 Agent 内核（main loop / orchestrator / blackboard / tools / tracer / tokenBudget / antiloop / structured-output）能直接复用，但外围要重写。
+下面是企业级规划。
+________________________________________
+1. 整体思路
+一句话：把 fm-cli 的"一个 Agent 跑一个用户任务"改造成"orchestrator 编排三个 worker Agent，共享一份用户画像黑板，跨用户做向量召回 + 规则排序"。
+三 Agent 不是简单串行流水线（那样匹配延迟会很高），而是事件驱动 + 阶段切换：
+黑板是核心：三个 Agent 不直接互相调用，全靠读写黑板解耦。这样某个 Agent 挂了/慢了不影响别的，便于独立评测和替换。
+________________________________________
+2. 与 fm-cli 的复用关系
+fm-cli 现成模块	在新系统里干什么	复用程度
+agent/main.ts
+作为每个 worker Agent 的循环基类	抽象成 BaseAgent
+agent/orchestrator.ts
+编排三 Agent 的状态机	直接搬
+agent/blackboard.ts
+用户画像 + 候选池共享	直接搬，扩 schema
+agent/structured-output.ts
+画像抽取的可靠 JSON	直接搬
+agent/tracer.ts
+全链路 trace（面试可解释亮点）	直接搬
+agent/tokenBudget.ts
+每用户/每 Agent 预算	直接搬
+agent/antiloop.ts
+Agent 反循环	直接搬
+services/embeddingIndex.ts
+画像向量化 + 召回	改造（接 pgvector）
+core/api-client.ts
+LLM 调用	直接搬
+core/tools/
+function calling 框架	沿用，工具换成业务工具
+新增	用户体系、匹配引擎、撮合队列、风控、租户隔离、评测集	全新写
+________________________________________
+3. 三 Agent 协作架构
+3.1 Orchestrator（编排者，单例）
+职责：维护用户会话状态机，决定下一阶段交给哪个 Agent。
+状态机（每个用户一份）：
+状态转换由信号触发，不是写死的函数调用。信号来自黑板（如 profile.confidence > 0.7 → 触发匹配）。这样可异步、可重放、可测试。
+3.2 ProfileAgent（画像采集）
+输入：用户最近 N 轮对话 + 当前 profile 草稿 输出：增量 profile patch（不是整份重写，避免抖动）
+Profile 结构（这是核心数据契约，定死）：
+关键设计：
+•	增量 patch：每轮只产 diff，黑板上 merge，version +1。避免重写抖动。
+•	confidence 必填：每个字段单独打分。interests[0].confidence 低就不进匹配加权。
+•	evidence 锚点：每条结论附"用户原话 + 第几轮"，匹配后给用户看"为什么觉得你喜欢 X"——这是课题的"可解释推荐"亮点。
+•	embedding 文本拼接：用一段固定模板把 profile 渲染成自然语言再向量化，比直接向量化字段值召回准。
+3.3 MatchAgent（匹配决策）
+两阶段：召回 → 排序。延迟敏感（<2s），所以召回走向量库（不调 LLM），排序走规则引擎（也不调 LLM）。LLM 只在"可解释生成"阶段介入。
+召回（Recall）
+向量距离用余弦（<=>）。pgvector 一行 SQL，零额外服务。
+排序（Rank）
+混合打分，权重写到配置表（不要硬编码，运营要调）：
+每条候选输出 factor 拆分，前端可视化成雷达图。这是"可解释"的关键。
+可解释
+每个最终候选给一段 LLM 生成的"为什么你们可能合得来"，输入是双方 profile + 评分因子，强制结构化输出：
+3.4 IceBreakerAgent（撮合辅助）
+输入：双方 profile + 可解释因子 输出：3 条破冰话术 + 使用建议（哪条更适合同步聊 vs 异步聊）
+约束：
+•	不暴露对方隐私（不引用具体对话原话，只引用 profile 字段）
+•	多样性：3 条分别走"共同点 / 互补点 / 场景化"三个角度
+•	风格可控：根据双方 socialStyle.depth 调整深浅
+________________________________________
+4. 数据存储
+用途	选型	理由
+主存储（用户、profile、匹配记录）	PostgreSQL	关系型 + JSONB 字段 + 事务
+向量索引	pgvector 扩展	不引入额外服务，跟主库一致
+会话/缓存	Redis	对话历史短时缓存、限流计数、分布式锁
+异步任务	BullMQ（基于 Redis）	画像更新、批量匹配异步化，不阻塞对话
+日志/trace	OpenTelemetry → Jaeger / Loki	沿用 fm-cli 的 tracer，导出到标准后端
+对话原话	PostgreSQL 单表 + 30 天后归档到对象存储	隐私合规：可删、可导出
+关键表（不展开 DDL，给概念）：
+________________________________________
+5. 目录组织（pnpm monorepo）
+为什么 monorepo + packages：三个 Agent 必须能独立单测、独立替换 prompt、独立评测。塞进一个 src/ 里改一处会动全身。pnpm workspace 一行 pnpm --filter @matchmate/profile-agent test。
+________________________________________
+6. 企业级能力清单（这是和"能跑 demo"的差距）
+维度	措施	落在哪
+多租户	每张表带 tenant_id，向量召回 WHERE 必带	DB schema + 中间件
+隐私合规	对话 30 天归档 + 用户可一键导出/删除（GDPR/PIPL）	users/export、users/forget-me 接口
+风控	异常账号检测（短时间大量发消息、敏感词）	ProfileAgent.riskFlags + 风控中间件
+限流	按用户限 LLM 调用频率（如 20 轮/小时）	Redis 令牌桶
+预算	每用户/每租户每日 LLM 成本上限，超了降级	沿用 fm-cli tokenBudget，加日级聚合
+可观测	全链路 trace（每 Agent 一个 span）+ 成本/延迟看板	沿用 fm-cli tracer + Grafana
+Prompt 治理	prompt 进库版本化，新版本灰度 10% 流量	prompt_versions 表 + feature flag
+评测	100 条种子对话回归测试，prompt 改动必须过评测	eval/ 目录
+可解释	匹配结果附 factor 拆分 + evidence 锚点	MatchAgent 输出 schema 强制
+熔断	LLM 调用失败率 >阈值 自动降级到规则匹配	熔断器（如 opossum）
+审计	所有 admin 操作（调权重、看用户数据）记日志	audit_log 表
+配置中心	匹配权重、prompt 版本、feature flag 都进 DB 不进代码	配置表 + 热加载
+________________________________________
+7. 落地路线图
+MVP（2 周）：单租户、3 Agent 跑通、pgvector 召回 + 规则排序、SSE 对话、可解释结果展示。这一步就能演示课题。
+Beta（再 2 周）：加多租户、限流、风控、prompt 版本化、tracer 接 Jaeger、评测集跑起来。
+GA（再 2 周）：加熔断、灰度、审计、运营后台、压测、文档。
+每阶段都可独立交付演示，不会出现"做了一半没法 show"。
+________________________________________
+8. 几个关键决策（面试可能问）
+1.	为什么黑板模式而不是流水线？
+流水线下游必须等上游，画像没稳定就没法匹配。黑板允许 ProfileAgent 持续微调画像的同时，MatchAgent 用上一版画像召回——解耦延迟。
+2.	为什么 pgvector 而不是 Milvus/Pinecone？
+用户量 <100 万时 pgvector 完全够，少一个服务少一份运维。等到百万级再迁移，向量库接口已经在 packages/vector-store/ 抽好了。
+3.	为什么画像要增量 patch？
+整份重写会丢失"用户上一秒说自己外向，下一秒改口"的演进信息。evidence 锚点 + version 让画像可追溯。
+4.	为什么匹配不调 LLM？
+LLM 排序延迟 1-3s 且贵。规则引擎 50ms，可解释用 LLM 在选完 top-3 后再调一次，成本降 90%。
+5.	多 Agent 怎么防死循环？
+直接搬 fm-cli 的 antiloop.ts：每个 Agent 内部记签名计数，跨 Agent 用黑板锁防止两个 Agent 互相触发。
+
+

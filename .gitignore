@@ -1,0 +1,7 @@
+node_modules/
+.npm-cache/
+.env
+logs/
+*.log
+dist/
+dump.rdb

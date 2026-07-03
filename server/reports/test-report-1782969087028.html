@@ -1,0 +1,1610 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>MatchMate AI 派发测试报告</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1115; color: #e8e8e8; padding: 24px; }
+  h1 { color: #fff; margin-bottom: 8px; }
+  h2 { color: #8b5cf6; margin: 32px 0 16px; border-left: 4px solid #8b5cf6; padding-left: 12px; }
+  h3 { color: #10b981; margin: 20px 0 12px; }
+  .meta { color: #888; font-size: 13px; margin-bottom: 24px; }
+  .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 32px; }
+  .card { background: #1a1d24; border: 1px solid #2a2d34; border-radius: 12px; padding: 16px; }
+  .card-label { color: #888; font-size: 12px; text-transform: uppercase; margin-bottom: 4px; }
+  .card-value { color: #fff; font-size: 24px; font-weight: 700; }
+  .card-value.green { color: #10b981; }
+  .card-value.red { color: #ef4444; }
+  .card-value.yellow { color: #f59e0b; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 24px; background: #1a1d24; border-radius: 12px; overflow: hidden; }
+  th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid #2a2d34; }
+  th { background: #222631; color: #8b5cf6; font-weight: 600; font-size: 13px; text-transform: uppercase; }
+  td { font-size: 14px; }
+  tr:hover { background: #22263150; }
+  .mbti-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 700; }
+  .mbti-NT { background: rgba(139,92,246,0.2); color: #a78bfa; }
+  .mbti-NF { background: rgba(16,185,129,0.2); color: #34d399; }
+  .mbti-SJ { background: rgba(79,125,255,0.2); color: #93c5fd; }
+  .mbti-SP { background: rgba(255,138,76,0.2); color: #fb923c; }
+  .mbti-UNKNOWN { background: rgba(120,120,120,0.2); color: #aaa; }
+  .score-bar { display: inline-block; height: 8px; border-radius: 4px; background: linear-gradient(90deg, #ef4444, #f59e0b, #10b981); }
+  .timeline { max-height: 600px; overflow-y: auto; background: #1a1d24; border-radius: 12px; padding: 12px; font-family: 'Consolas', monospace; font-size: 12px; }
+  .timeline-item { padding: 4px 0; border-bottom: 1px solid #2a2d3430; }
+  .timeline-time { color: #888; }
+  .timeline-kind { padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 700; margin: 0 8px; }
+  .kind-fn { background: #0e749040; color: #67e8f9; }
+  .kind-event { background: #7c3aed40; color: #c4b5fd; }
+  .kind-token { background: #ca8a0440; color: #fde68a; }
+  .kind-data { background: #15803d40; color: #86efac; }
+  .kind-cache { background: #1d4ed840; color: #93c5fd; }
+  .kind-state { background: #4b556340; color: #d1d5db; }
+  .highlight { background: #1a1d24; border-left: 4px solid #10b981; padding: 12px 16px; margin: 12px 0; border-radius: 0 8px 8px 0; }
+  .highlight.warn { border-color: #f59e0b; }
+  pre { background: #0f1115; padding: 12px; border-radius: 8px; overflow-x: auto; font-size: 12px; }
+</style>
+</head>
+<body>
+  <h1>MatchMate AI 派发测试报告</h1>
+  <div class="meta">
+    生成时间：2026/7/2 13:11:26 ｜
+    总耗时：184.48s ｜
+    AI 用户数：4 ｜
+    LLM 状态：✅ 已启用 (DeepSeek)
+  </div>
+
+  <h2>📊 总览</h2>
+  <div class="summary">
+    <div class="card">
+      <div class="card-label">总对话轮数</div>
+      <div class="card-value">20</div>
+    </div>
+    <div class="card">
+      <div class="card-label">匹配成功数</div>
+      <div class="card-value green">0</div>
+    </div>
+    <div class="card">
+      <div class="card-label">MBTI 识别率</div>
+      <div class="card-value yellow">100.0%</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Token 节省</div>
+      <div class="card-value green">15.8%</div>
+    </div>
+  </div>
+
+  <h2>👥 AI 用户画像</h2>
+  <table>
+    <tr>
+      <th>用户</th><th>预期 MBTI</th><th>实际 MBTI</th><th>置信度</th>
+      <th>对话轮数</th><th>Prompt Tokens</th><th>Completion Tokens</th><th>总 Tokens</th>
+    </tr>
+    
+    <tr>
+      <td><strong>Alice</strong><br><small style="color:#888">@alice_intj</small></td>
+      <td><span class="mbti-badge mbti-NT">INTJ</span></td>
+      <td><span class="mbti-badge mbti-NT">ENTJ</span></td>
+      <td>75.0%</td>
+      <td>5</td>
+      <td>1305</td>
+      <td>935</td>
+      <td><strong>2240</strong></td>
+    </tr>
+    <tr>
+      <td><strong>Bob</strong><br><small style="color:#888">@bob_enfp</small></td>
+      <td><span class="mbti-badge mbti-NF">ENFP</span></td>
+      <td><span class="mbti-badge mbti-UNKNOWN">ESFJ</span></td>
+      <td>66.0%</td>
+      <td>5</td>
+      <td>1409</td>
+      <td>1172</td>
+      <td><strong>2581</strong></td>
+    </tr>
+    <tr>
+      <td><strong>Carol</strong><br><small style="color:#888">@carol_isfj</small></td>
+      <td><span class="mbti-badge mbti-UNKNOWN">ISFJ</span></td>
+      <td><span class="mbti-badge mbti-UNKNOWN">ISFJ</span></td>
+      <td>75.0%</td>
+      <td>5</td>
+      <td>1474</td>
+      <td>1204</td>
+      <td><strong>2678</strong></td>
+    </tr>
+    <tr>
+      <td><strong>David</strong><br><small style="color:#888">@david_entp</small></td>
+      <td><span class="mbti-badge mbti-NT">ENTP</span></td>
+      <td><span class="mbti-badge mbti-NT">ENTP</span></td>
+      <td>89.0%</td>
+      <td>5</td>
+      <td>1406</td>
+      <td>1153</td>
+      <td><strong>2559</strong></td>
+    </tr>
+  </table>
+
+  
+
+  <h2>💞 两两匹配结果</h2>
+  
+  <h3>Alice <span class="mbti-badge mbti-NT">ENTJ</span> 的推荐搭子</h3>
+  <table>
+    <tr>
+      <th>候选</th><th>MBTI</th><th>综合分</th>
+      <th>向量</th><th>兴趣</th><th>风格</th><th>时段</th><th>目标</th><th>MBTI 兼容</th>
+      <th>MBTI 解释</th>
+    </tr>
+    
+  </table>
+  <h3>Bob <span class="mbti-badge mbti-UNKNOWN">ESFJ</span> 的推荐搭子</h3>
+  <table>
+    <tr>
+      <th>候选</th><th>MBTI</th><th>综合分</th>
+      <th>向量</th><th>兴趣</th><th>风格</th><th>时段</th><th>目标</th><th>MBTI 兼容</th>
+      <th>MBTI 解释</th>
+    </tr>
+    
+  </table>
+  <h3>Carol <span class="mbti-badge mbti-UNKNOWN">ISFJ</span> 的推荐搭子</h3>
+  <table>
+    <tr>
+      <th>候选</th><th>MBTI</th><th>综合分</th>
+      <th>向量</th><th>兴趣</th><th>风格</th><th>时段</th><th>目标</th><th>MBTI 兼容</th>
+      <th>MBTI 解释</th>
+    </tr>
+    
+  </table>
+  <h3>David <span class="mbti-badge mbti-NT">ENTP</span> 的推荐搭子</h3>
+  <table>
+    <tr>
+      <th>候选</th><th>MBTI</th><th>综合分</th>
+      <th>向量</th><th>兴趣</th><th>风格</th><th>时段</th><th>目标</th><th>MBTI 兼容</th>
+      <th>MBTI 解释</th>
+    </tr>
+    
+  </table>
+
+  <h2>💰 Token 花费对比（Reasonix 缓存方案）</h2>
+  <div class="highlight ">
+    ✅ DeepSeek API 已接入，以下为真实 token 消费数据（含自动缓存命中）
+  </div>
+  <table>
+    <tr>
+      <th>方案</th><th>轮数</th><th>Prompt</th><th>Completion</th>
+      <th>缓存命中</th><th>缓存未命中</th>
+      <th>总 Token</th><th>花费（元）</th>
+    </tr>
+    <tr>
+      <td><strong>Baseline</strong><br><small style="color:#888">假设无缓存（全部按 miss 计费）</small></td>
+      <td>20</td>
+      <td>5594</td>
+      <td>4464</td>
+      <td style="color:#888">0</td>
+      <td>5594</td>
+      <td><strong>10058</strong></td>
+      <td>¥0.0146</td>
+    </tr>
+    <tr>
+      <td><strong>Reasonix</strong><br><small style="color:#10b981">DeepSeek 自动缓存 + append-only</small></td>
+      <td>20</td>
+      <td>5594</td>
+      <td>4464</td>
+      <td style="color:#10b981">2560</td>
+      <td>3034</td>
+      <td><strong>10058</strong></td>
+      <td>¥0.0123</td>
+    </tr>
+    <tr style="background: #10b98115">
+      <td colspan="6"><strong>节省</strong>（命中部分按 90% 折扣的等效 token）</td>
+      <td><strong style="color:#10b981">2304</strong></td>
+      <td><strong style="color:#10b981">¥0.0023 (15.8%)</strong></td>
+    </tr>
+  </table>
+
+  <h2>📋 定价参考（DeepSeek V4-Flash，2026 年官方定价）</h2>
+  <div class="meta">
+    输入（缓存未命中）：¥1.008/百万 token ｜
+    输入（缓存命中）：¥0.1008/百万 token（节省 90%）｜
+    输出：¥2.016/百万 token<br>
+    <small style="color:#888">
+      数据来源：https://api-docs.deepseek.com/quick_start/pricing ｜
+      汇率：$1 = ¥7.2 ｜
+      缓存命中：DeepSeek 自动处理，无需配置
+    </small>
+  </div>
+
+  <h2>📜 完整运行时间线（153 条）</h2>
+  <div class="timeline">
+    
+    <div class="timeline-item">
+      <span class="timeline-time">13:11:26.909</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>phase.4.match.done</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"matches":4}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:11:26.900</span>
+      <span class="timeline-kind kind-data">DATA</span>
+      <strong>match.result</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"f2c12dbf-aa74-49a1-ad74-4d89f2c5e3d8","candidateCount":0}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:11:26.890</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>matchAgent.run</strong>
+      <span style="color:#888"> (0ms)</span>
+      <span style="color:#67e8f9"> [user:f2c12dbf]</span>
+      
+      
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:11:26.880</span>
+      <span class="timeline-kind kind-data">DATA</span>
+      <strong>match.result</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"695f216e-eb07-48ee-813e-c5c462920d4a","candidateCount":0}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:11:26.869</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>matchAgent.run</strong>
+      <span style="color:#888"> (2ms)</span>
+      <span style="color:#67e8f9"> [user:695f216e]</span>
+      
+      
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:11:26.860</span>
+      <span class="timeline-kind kind-data">DATA</span>
+      <strong>match.result</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"2fc9fb7f-8251-4fa6-884f-0ee2ccc060be","candidateCount":0}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:11:26.849</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>matchAgent.run</strong>
+      <span style="color:#888"> (1ms)</span>
+      <span style="color:#67e8f9"> [user:2fc9fb7f]</span>
+      
+      
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:11:26.838</span>
+      <span class="timeline-kind kind-data">DATA</span>
+      <strong>match.result</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"0f5d7edc-7bf8-470b-97e2-4ec3416dac3b","candidateCount":0}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:11:26.824</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>matchAgent.run</strong>
+      <span style="color:#888"> (2ms)</span>
+      <span style="color:#67e8f9"> [user:0f5d7edc]</span>
+      
+      
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:11:26.814</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>phase.4.match.start</strong>
+      
+      
+      
+      
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:11:26.806</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>phase.3.cacheComparison.done</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"baselineCost":0.0146,"reasonixCost":0.0123,"savingPercent":15.8,"cacheHitRate":0.4576331784054344}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:11:26.797</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>phase.3.cacheComparison.start</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"rounds":20,"inputTokens":5594,"cacheHitTokens":2560,"cacheMissTokens":3034}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:11:26.789</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>phase.2.chat.done</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"users":4,"totalRounds":20,"totalInputTokens":5594,"totalOutputTokens":4464,"totalCacheHitTokens":2560,"totalCacheMissTokens":3034,"cacheHitRate":0.4576331784054344}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:11:26.781</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>user.chat.done</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"f2c12dbf-aa74-49a1-ad74-4d89f2c5e3d8","rounds":5,"mbti":"ENTP","tokens":{"prompt":1406,"completion":1153,"total":2559}}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:11:26.774</span>
+      <span class="timeline-kind kind-data">DATA</span>
+      <strong>mbti.updated</strong>
+      
+      <span style="color:#67e8f9"> [user:f2c12dbf]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"f2c12dbf-aa74-49a1-ad74-4d89f2c5e3d8","type":"ENTP","confidence":0.89}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:11:20.845</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>updateMbtiFromMessages</strong>
+      <span style="color:#888"> (5918ms)</span>
+      <span style="color:#67e8f9"> [user:f2c12dbf]</span>
+      
+      
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:11:20.834</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.done</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"f2c12dbf-aa74-49a1-ad74-4d89f2c5e3d8","round":5,"replyLen":130,"tokens":{"inputTokens":477,"outputTokens":234,"cacheHitTokens":256,"cacheMissTokens":221}}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:11:20.822</span>
+      <span class="timeline-kind kind-token">TOKEN</span>
+      <strong>llm.chat.round.5</strong>
+      
+      <span style="color:#67e8f9"> [user:f2c12dbf]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"model":"deepseek-v4-flash","promptTokens":477,"completionTokens":234,"totalTokens":711,"cacheHitTokens":256,"cacheMissTokens":221,"hitRate":0.5366876310272537,"costYuan":0.0007}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:11:16.191</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>chatStream</strong>
+      <span style="color:#888"> (4623ms)</span>
+      <span style="color:#67e8f9"> [user:f2c12dbf]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"round":5,"historyLen":10}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:11:16.185</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.start</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"f2c12dbf-aa74-49a1-ad74-4d89f2c5e3d8","round":5,"msgLen":45}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:11:16.180</span>
+      <span class="timeline-kind kind-data">DATA</span>
+      <strong>mbti.updated</strong>
+      
+      <span style="color:#67e8f9"> [user:f2c12dbf]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"f2c12dbf-aa74-49a1-ad74-4d89f2c5e3d8","type":"ENTP","confidence":0.85}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:11:10.208</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>updateMbtiFromMessages</strong>
+      <span style="color:#888"> (5965ms)</span>
+      <span style="color:#67e8f9"> [user:f2c12dbf]</span>
+      
+      
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:11:10.200</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.done</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"f2c12dbf-aa74-49a1-ad74-4d89f2c5e3d8","round":4,"replyLen":125,"tokens":{"inputTokens":379,"outputTokens":260,"cacheHitTokens":256,"cacheMissTokens":123}}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:11:10.116</span>
+      <span class="timeline-kind kind-token">TOKEN</span>
+      <strong>llm.chat.round.4</strong>
+      
+      <span style="color:#67e8f9"> [user:f2c12dbf]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"model":"deepseek-v4-flash","promptTokens":379,"completionTokens":260,"totalTokens":639,"cacheHitTokens":256,"cacheMissTokens":123,"hitRate":0.6754617414248021,"costYuan":0.0007}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:11:05.236</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>chatStream</strong>
+      <span style="color:#888"> (4870ms)</span>
+      <span style="color:#67e8f9"> [user:f2c12dbf]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"round":4,"historyLen":8}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:11:05.228</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.start</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"f2c12dbf-aa74-49a1-ad74-4d89f2c5e3d8","round":4,"msgLen":53}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:11:05.222</span>
+      <span class="timeline-kind kind-data">DATA</span>
+      <strong>mbti.updated</strong>
+      
+      <span style="color:#67e8f9"> [user:f2c12dbf]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"f2c12dbf-aa74-49a1-ad74-4d89f2c5e3d8","type":"ENTP","confidence":0.85}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:11:00.405</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>updateMbtiFromMessages</strong>
+      <span style="color:#888"> (4811ms)</span>
+      <span style="color:#67e8f9"> [user:f2c12dbf]</span>
+      
+      
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:11:00.396</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.done</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"f2c12dbf-aa74-49a1-ad74-4d89f2c5e3d8","round":3,"replyLen":140,"tokens":{"inputTokens":272,"outputTokens":247,"cacheHitTokens":128,"cacheMissTokens":144}}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:11:00.389</span>
+      <span class="timeline-kind kind-token">TOKEN</span>
+      <strong>llm.chat.round.3</strong>
+      
+      <span style="color:#67e8f9"> [user:f2c12dbf]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"model":"deepseek-v4-flash","promptTokens":272,"completionTokens":247,"totalTokens":519,"cacheHitTokens":128,"cacheMissTokens":144,"hitRate":0.47058823529411764,"costYuan":0.0007}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:55.850</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>chatStream</strong>
+      <span style="color:#888"> (4530ms)</span>
+      <span style="color:#67e8f9"> [user:f2c12dbf]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"round":3,"historyLen":6}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:55.843</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.start</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"f2c12dbf-aa74-49a1-ad74-4d89f2c5e3d8","round":3,"msgLen":45}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:55.837</span>
+      <span class="timeline-kind kind-data">DATA</span>
+      <strong>mbti.updated</strong>
+      
+      <span style="color:#67e8f9"> [user:f2c12dbf]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"f2c12dbf-aa74-49a1-ad74-4d89f2c5e3d8","type":"ENTP","confidence":0.83}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:50.321</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>updateMbtiFromMessages</strong>
+      <span style="color:#888"> (5510ms)</span>
+      <span style="color:#67e8f9"> [user:f2c12dbf]</span>
+      
+      
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:50.312</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.done</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"f2c12dbf-aa74-49a1-ad74-4d89f2c5e3d8","round":2,"replyLen":105,"tokens":{"inputTokens":177,"outputTokens":231,"cacheHitTokens":0,"cacheMissTokens":177}}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:50.306</span>
+      <span class="timeline-kind kind-token">TOKEN</span>
+      <strong>llm.chat.round.2</strong>
+      
+      <span style="color:#67e8f9"> [user:f2c12dbf]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"model":"deepseek-v4-flash","promptTokens":177,"completionTokens":231,"totalTokens":408,"cacheHitTokens":0,"cacheMissTokens":177,"hitRate":0,"costYuan":0.0006}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:46.075</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>chatStream</strong>
+      <span style="color:#888"> (4225ms)</span>
+      <span style="color:#67e8f9"> [user:f2c12dbf]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"round":2,"historyLen":4}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:46.068</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.start</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"f2c12dbf-aa74-49a1-ad74-4d89f2c5e3d8","round":2,"msgLen":52}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:46.064</span>
+      <span class="timeline-kind kind-data">DATA</span>
+      <strong>mbti.updated</strong>
+      
+      <span style="color:#67e8f9"> [user:f2c12dbf]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"f2c12dbf-aa74-49a1-ad74-4d89f2c5e3d8","type":"UNKNOWN","confidence":0.65}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:42.389</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>updateMbtiFromMessages</strong>
+      <span style="color:#888"> (3668ms)</span>
+      <span style="color:#67e8f9"> [user:f2c12dbf]</span>
+      
+      
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:42.384</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.done</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"f2c12dbf-aa74-49a1-ad74-4d89f2c5e3d8","round":1,"replyLen":74,"tokens":{"inputTokens":101,"outputTokens":181,"cacheHitTokens":0,"cacheMissTokens":101}}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:42.379</span>
+      <span class="timeline-kind kind-token">TOKEN</span>
+      <strong>llm.chat.round.1</strong>
+      
+      <span style="color:#67e8f9"> [user:f2c12dbf]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"model":"deepseek-v4-flash","promptTokens":101,"completionTokens":181,"totalTokens":282,"cacheHitTokens":0,"cacheMissTokens":101,"hitRate":0,"costYuan":0.0005}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:38.983</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>chatStream</strong>
+      <span style="color:#888"> (3389ms)</span>
+      <span style="color:#67e8f9"> [user:f2c12dbf]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"round":1,"historyLen":2}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:38.978</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.start</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"f2c12dbf-aa74-49a1-ad74-4d89f2c5e3d8","round":1,"msgLen":35}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:38.971</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>user.chat.start</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"f2c12dbf-aa74-49a1-ad74-4d89f2c5e3d8","username":"david_entp"}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:38.966</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>user.chat.done</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"695f216e-eb07-48ee-813e-c5c462920d4a","rounds":5,"mbti":"ISFJ","tokens":{"prompt":1474,"completion":1204,"total":2678}}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:38.961</span>
+      <span class="timeline-kind kind-data">DATA</span>
+      <strong>mbti.updated</strong>
+      
+      <span style="color:#67e8f9"> [user:695f216e]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"695f216e-eb07-48ee-813e-c5c462920d4a","type":"ISFJ","confidence":0.75}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:32.038</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>updateMbtiFromMessages</strong>
+      <span style="color:#888"> (6916ms)</span>
+      <span style="color:#67e8f9"> [user:695f216e]</span>
+      
+      
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:31.964</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.done</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"695f216e-eb07-48ee-813e-c5c462920d4a","round":5,"replyLen":174,"tokens":{"inputTokens":504,"outputTokens":268,"cacheHitTokens":384,"cacheMissTokens":120}}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:31.958</span>
+      <span class="timeline-kind kind-token">TOKEN</span>
+      <strong>llm.chat.round.5</strong>
+      
+      <span style="color:#67e8f9"> [user:695f216e]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"model":"deepseek-v4-flash","promptTokens":504,"completionTokens":268,"totalTokens":772,"cacheHitTokens":384,"cacheMissTokens":120,"hitRate":0.7619047619047619,"costYuan":0.0007}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:27.449</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>chatStream</strong>
+      <span style="color:#888"> (4503ms)</span>
+      <span style="color:#67e8f9"> [user:695f216e]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"round":5,"historyLen":10}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:27.444</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.start</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"695f216e-eb07-48ee-813e-c5c462920d4a","round":5,"msgLen":36}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:27.438</span>
+      <span class="timeline-kind kind-data">DATA</span>
+      <strong>mbti.updated</strong>
+      
+      <span style="color:#67e8f9"> [user:695f216e]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"695f216e-eb07-48ee-813e-c5c462920d4a","type":"ISFJ","confidence":0.75}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:23.726</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>updateMbtiFromMessages</strong>
+      <span style="color:#888"> (3706ms)</span>
+      <span style="color:#67e8f9"> [user:695f216e]</span>
+      
+      
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:23.720</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.done</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"695f216e-eb07-48ee-813e-c5c462920d4a","round":4,"replyLen":145,"tokens":{"inputTokens":390,"outputTokens":244,"cacheHitTokens":256,"cacheMissTokens":134}}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:23.714</span>
+      <span class="timeline-kind kind-token">TOKEN</span>
+      <strong>llm.chat.round.4</strong>
+      
+      <span style="color:#67e8f9"> [user:695f216e]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"model":"deepseek-v4-flash","promptTokens":390,"completionTokens":244,"totalTokens":634,"cacheHitTokens":256,"cacheMissTokens":134,"hitRate":0.6564102564102564,"costYuan":0.0007}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:19.358</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>chatStream</strong>
+      <span style="color:#888"> (4350ms)</span>
+      <span style="color:#67e8f9"> [user:695f216e]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"round":4,"historyLen":8}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:19.352</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.start</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"695f216e-eb07-48ee-813e-c5c462920d4a","round":4,"msgLen":42}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:19.347</span>
+      <span class="timeline-kind kind-data">DATA</span>
+      <strong>mbti.updated</strong>
+      
+      <span style="color:#67e8f9"> [user:695f216e]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"695f216e-eb07-48ee-813e-c5c462920d4a","type":"ISFJ","confidence":0.7}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:14.649</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>updateMbtiFromMessages</strong>
+      <span style="color:#888"> (4689ms)</span>
+      <span style="color:#67e8f9"> [user:695f216e]</span>
+      
+      
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:14.642</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.done</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"695f216e-eb07-48ee-813e-c5c462920d4a","round":3,"replyLen":132,"tokens":{"inputTokens":284,"outputTokens":237,"cacheHitTokens":128,"cacheMissTokens":156}}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:14.637</span>
+      <span class="timeline-kind kind-token">TOKEN</span>
+      <strong>llm.chat.round.3</strong>
+      
+      <span style="color:#67e8f9"> [user:695f216e]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"model":"deepseek-v4-flash","promptTokens":284,"completionTokens":237,"totalTokens":521,"cacheHitTokens":128,"cacheMissTokens":156,"hitRate":0.4507042253521127,"costYuan":0.0006}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:10.105</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>chatStream</strong>
+      <span style="color:#888"> (4522ms)</span>
+      <span style="color:#67e8f9"> [user:695f216e]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"round":3,"historyLen":6}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:10.100</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.start</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"695f216e-eb07-48ee-813e-c5c462920d4a","round":3,"msgLen":43}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:10.094</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>mbti.extract.error</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"695f216e-eb07-48ee-813e-c5c462920d4a","error":"Cannot read properties of undefined (reading 'confidence')"}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:06.082</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>updateMbtiFromMessages</strong>
+      <span style="color:#888"> (4007ms)</span>
+      <span style="color:#67e8f9"> [user:695f216e]</span>
+      <span style="color:#ef4444"> ❌ Cannot read properties of undefined (reading 'confidence')</span>
+      
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:06.076</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.done</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"695f216e-eb07-48ee-813e-c5c462920d4a","round":2,"replyLen":111,"tokens":{"inputTokens":193,"outputTokens":244,"cacheHitTokens":0,"cacheMissTokens":193}}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:06.070</span>
+      <span class="timeline-kind kind-token">TOKEN</span>
+      <strong>llm.chat.round.2</strong>
+      
+      <span style="color:#67e8f9"> [user:695f216e]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"model":"deepseek-v4-flash","promptTokens":193,"completionTokens":244,"totalTokens":437,"cacheHitTokens":0,"cacheMissTokens":193,"hitRate":0,"costYuan":0.0007}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:02.253</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>chatStream</strong>
+      <span style="color:#888"> (3811ms)</span>
+      <span style="color:#67e8f9"> [user:695f216e]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"round":2,"historyLen":4}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:02.248</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.start</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"695f216e-eb07-48ee-813e-c5c462920d4a","round":2,"msgLen":51}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:10:02.242</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>mbti.extract.error</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"695f216e-eb07-48ee-813e-c5c462920d4a","error":"Cannot read properties of undefined (reading 'confidence')"}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:58.194</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>updateMbtiFromMessages</strong>
+      <span style="color:#888"> (4042ms)</span>
+      <span style="color:#67e8f9"> [user:695f216e]</span>
+      <span style="color:#ef4444"> ❌ Cannot read properties of undefined (reading 'confidence')</span>
+      
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:58.119</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.done</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"695f216e-eb07-48ee-813e-c5c462920d4a","round":1,"replyLen":87,"tokens":{"inputTokens":103,"outputTokens":211,"cacheHitTokens":0,"cacheMissTokens":103}}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:58.113</span>
+      <span class="timeline-kind kind-token">TOKEN</span>
+      <strong>llm.chat.round.1</strong>
+      
+      <span style="color:#67e8f9"> [user:695f216e]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"model":"deepseek-v4-flash","promptTokens":103,"completionTokens":211,"totalTokens":314,"cacheHitTokens":0,"cacheMissTokens":103,"hitRate":0,"costYuan":0.0005}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:54.231</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>chatStream</strong>
+      <span style="color:#888"> (3873ms)</span>
+      <span style="color:#67e8f9"> [user:695f216e]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"round":1,"historyLen":2}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:54.225</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.start</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"695f216e-eb07-48ee-813e-c5c462920d4a","round":1,"msgLen":36}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:54.219</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>user.chat.start</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"695f216e-eb07-48ee-813e-c5c462920d4a","username":"carol_isfj"}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:54.212</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>user.chat.done</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"2fc9fb7f-8251-4fa6-884f-0ee2ccc060be","rounds":5,"mbti":"ESFJ","tokens":{"prompt":1409,"completion":1172,"total":2581}}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:54.205</span>
+      <span class="timeline-kind kind-data">DATA</span>
+      <strong>mbti.updated</strong>
+      
+      <span style="color:#67e8f9"> [user:2fc9fb7f]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"2fc9fb7f-8251-4fa6-884f-0ee2ccc060be","type":"ESFJ","confidence":0.66}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:47.137</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>updateMbtiFromMessages</strong>
+      <span style="color:#888"> (7061ms)</span>
+      <span style="color:#67e8f9"> [user:2fc9fb7f]</span>
+      
+      
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:47.130</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.done</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"2fc9fb7f-8251-4fa6-884f-0ee2ccc060be","round":5,"replyLen":162,"tokens":{"inputTokens":472,"outputTokens":241,"cacheHitTokens":256,"cacheMissTokens":216}}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:47.125</span>
+      <span class="timeline-kind kind-token">TOKEN</span>
+      <strong>llm.chat.round.5</strong>
+      
+      <span style="color:#67e8f9"> [user:2fc9fb7f]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"model":"deepseek-v4-flash","promptTokens":472,"completionTokens":241,"totalTokens":713,"cacheHitTokens":256,"cacheMissTokens":216,"hitRate":0.5423728813559322,"costYuan":0.0007}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:42.923</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>chatStream</strong>
+      <span style="color:#888"> (4193ms)</span>
+      <span style="color:#67e8f9"> [user:2fc9fb7f]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"round":5,"historyLen":10}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:42.917</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.start</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"2fc9fb7f-8251-4fa6-884f-0ee2ccc060be","round":5,"msgLen":49}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:42.911</span>
+      <span class="timeline-kind kind-data">DATA</span>
+      <strong>mbti.updated</strong>
+      
+      <span style="color:#67e8f9"> [user:2fc9fb7f]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"2fc9fb7f-8251-4fa6-884f-0ee2ccc060be","type":"ESFJ","confidence":0.66}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:35.958</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>updateMbtiFromMessages</strong>
+      <span style="color:#888"> (6945ms)</span>
+      <span style="color:#67e8f9"> [user:2fc9fb7f]</span>
+      
+      
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:35.952</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.done</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"2fc9fb7f-8251-4fa6-884f-0ee2ccc060be","round":4,"replyLen":120,"tokens":{"inputTokens":374,"outputTokens":238,"cacheHitTokens":256,"cacheMissTokens":118}}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:35.947</span>
+      <span class="timeline-kind kind-token">TOKEN</span>
+      <strong>llm.chat.round.4</strong>
+      
+      <span style="color:#67e8f9"> [user:2fc9fb7f]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"model":"deepseek-v4-flash","promptTokens":374,"completionTokens":238,"totalTokens":612,"cacheHitTokens":256,"cacheMissTokens":118,"hitRate":0.6844919786096256,"costYuan":0.0006}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:31.778</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>chatStream</strong>
+      <span style="color:#888"> (4162ms)</span>
+      <span style="color:#67e8f9"> [user:2fc9fb7f]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"round":4,"historyLen":8}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:31.773</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.start</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"2fc9fb7f-8251-4fa6-884f-0ee2ccc060be","round":4,"msgLen":40}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:31.767</span>
+      <span class="timeline-kind kind-data">DATA</span>
+      <strong>mbti.updated</strong>
+      
+      <span style="color:#67e8f9"> [user:2fc9fb7f]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"2fc9fb7f-8251-4fa6-884f-0ee2ccc060be","type":"ESFJ","confidence":0.66}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:25.577</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>updateMbtiFromMessages</strong>
+      <span style="color:#888"> (6184ms)</span>
+      <span style="color:#67e8f9"> [user:2fc9fb7f]</span>
+      
+      
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:25.570</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.done</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"2fc9fb7f-8251-4fa6-884f-0ee2ccc060be","round":3,"replyLen":135,"tokens":{"inputTokens":270,"outputTokens":253,"cacheHitTokens":128,"cacheMissTokens":142}}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:25.564</span>
+      <span class="timeline-kind kind-token">TOKEN</span>
+      <strong>llm.chat.round.3</strong>
+      
+      <span style="color:#67e8f9"> [user:2fc9fb7f]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"model":"deepseek-v4-flash","promptTokens":270,"completionTokens":253,"totalTokens":523,"cacheHitTokens":128,"cacheMissTokens":142,"hitRate":0.4740740740740741,"costYuan":0.0007}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:21.187</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>chatStream</strong>
+      <span style="color:#888"> (4369ms)</span>
+      <span style="color:#67e8f9"> [user:2fc9fb7f]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"round":3,"historyLen":6}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:21.181</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.start</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"2fc9fb7f-8251-4fa6-884f-0ee2ccc060be","round":3,"msgLen":42}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:21.176</span>
+      <span class="timeline-kind kind-data">DATA</span>
+      <strong>mbti.updated</strong>
+      
+      <span style="color:#67e8f9"> [user:2fc9fb7f]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"2fc9fb7f-8251-4fa6-884f-0ee2ccc060be","type":"ESFP","confidence":0.65}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:17.932</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>updateMbtiFromMessages</strong>
+      <span style="color:#888"> (3237ms)</span>
+      <span style="color:#67e8f9"> [user:2fc9fb7f]</span>
+      
+      
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:17.854</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.done</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"2fc9fb7f-8251-4fa6-884f-0ee2ccc060be","round":2,"replyLen":101,"tokens":{"inputTokens":183,"outputTokens":234,"cacheHitTokens":0,"cacheMissTokens":183}}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:17.848</span>
+      <span class="timeline-kind kind-token">TOKEN</span>
+      <strong>llm.chat.round.2</strong>
+      
+      <span style="color:#67e8f9"> [user:2fc9fb7f]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"model":"deepseek-v4-flash","promptTokens":183,"completionTokens":234,"totalTokens":417,"cacheHitTokens":0,"cacheMissTokens":183,"hitRate":0,"costYuan":0.0007}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:14.022</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>chatStream</strong>
+      <span style="color:#888"> (3819ms)</span>
+      <span style="color:#67e8f9"> [user:2fc9fb7f]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"round":2,"historyLen":4}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:14.016</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.start</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"2fc9fb7f-8251-4fa6-884f-0ee2ccc060be","round":2,"msgLen":38}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:14.009</span>
+      <span class="timeline-kind kind-data">DATA</span>
+      <strong>mbti.updated</strong>
+      
+      <span style="color:#67e8f9"> [user:2fc9fb7f]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"2fc9fb7f-8251-4fa6-884f-0ee2ccc060be","type":"UNKNOWN","confidence":0.55}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:10.848</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>updateMbtiFromMessages</strong>
+      <span style="color:#888"> (3147ms)</span>
+      <span style="color:#67e8f9"> [user:2fc9fb7f]</span>
+      
+      
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:10.840</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.done</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"2fc9fb7f-8251-4fa6-884f-0ee2ccc060be","round":1,"replyLen":74,"tokens":{"inputTokens":110,"outputTokens":206,"cacheHitTokens":0,"cacheMissTokens":110}}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:10.834</span>
+      <span class="timeline-kind kind-token">TOKEN</span>
+      <strong>llm.chat.round.1</strong>
+      
+      <span style="color:#67e8f9"> [user:2fc9fb7f]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"model":"deepseek-v4-flash","promptTokens":110,"completionTokens":206,"totalTokens":316,"cacheHitTokens":0,"cacheMissTokens":110,"hitRate":0,"costYuan":0.0005}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:07.157</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>chatStream</strong>
+      <span style="color:#888"> (3670ms)</span>
+      <span style="color:#67e8f9"> [user:2fc9fb7f]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"round":1,"historyLen":2}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:07.151</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.start</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"2fc9fb7f-8251-4fa6-884f-0ee2ccc060be","round":1,"msgLen":44}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:07.146</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>user.chat.start</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"2fc9fb7f-8251-4fa6-884f-0ee2ccc060be","username":"bob_enfp"}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:07.140</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>user.chat.done</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"0f5d7edc-7bf8-470b-97e2-4ec3416dac3b","rounds":5,"mbti":"ENTJ","tokens":{"prompt":1305,"completion":935,"total":2240}}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:07.134</span>
+      <span class="timeline-kind kind-data">DATA</span>
+      <strong>mbti.updated</strong>
+      
+      <span style="color:#67e8f9"> [user:0f5d7edc]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"0f5d7edc-7bf8-470b-97e2-4ec3416dac3b","type":"ENTJ","confidence":0.75}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:00.417</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>updateMbtiFromMessages</strong>
+      <span style="color:#888"> (6711ms)</span>
+      <span style="color:#67e8f9"> [user:0f5d7edc]</span>
+      
+      
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:00.411</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.done</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"0f5d7edc-7bf8-470b-97e2-4ec3416dac3b","round":5,"replyLen":91,"tokens":{"inputTokens":418,"outputTokens":188,"cacheHitTokens":256,"cacheMissTokens":162}}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:09:00.406</span>
+      <span class="timeline-kind kind-token">TOKEN</span>
+      <strong>llm.chat.round.5</strong>
+      
+      <span style="color:#67e8f9"> [user:0f5d7edc]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"model":"deepseek-v4-flash","promptTokens":418,"completionTokens":188,"totalTokens":606,"cacheHitTokens":256,"cacheMissTokens":162,"hitRate":0.6124401913875598,"costYuan":0.0006}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:56.870</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>chatStream</strong>
+      <span style="color:#888"> (3529ms)</span>
+      <span style="color:#67e8f9"> [user:0f5d7edc]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"round":5,"historyLen":10}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:56.865</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.start</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"0f5d7edc-7bf8-470b-97e2-4ec3416dac3b","round":5,"msgLen":60}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:56.860</span>
+      <span class="timeline-kind kind-data">DATA</span>
+      <strong>mbti.updated</strong>
+      
+      <span style="color:#67e8f9"> [user:0f5d7edc]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"0f5d7edc-7bf8-470b-97e2-4ec3416dac3b","type":"ENTJ","confidence":0.75}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:52.851</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>updateMbtiFromMessages</strong>
+      <span style="color:#888"> (4003ms)</span>
+      <span style="color:#67e8f9"> [user:0f5d7edc]</span>
+      
+      
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:52.845</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.done</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"0f5d7edc-7bf8-470b-97e2-4ec3416dac3b","round":4,"replyLen":115,"tokens":{"inputTokens":324,"outputTokens":186,"cacheHitTokens":128,"cacheMissTokens":196}}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:52.840</span>
+      <span class="timeline-kind kind-token">TOKEN</span>
+      <strong>llm.chat.round.4</strong>
+      
+      <span style="color:#67e8f9"> [user:0f5d7edc]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"model":"deepseek-v4-flash","promptTokens":324,"completionTokens":186,"totalTokens":510,"cacheHitTokens":128,"cacheMissTokens":196,"hitRate":0.3950617283950617,"costYuan":0.0006}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:49.443</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>chatStream</strong>
+      <span style="color:#888"> (3390ms)</span>
+      <span style="color:#67e8f9"> [user:0f5d7edc]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"round":4,"historyLen":8}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:49.437</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.start</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"0f5d7edc-7bf8-470b-97e2-4ec3416dac3b","round":4,"msgLen":50}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:49.431</span>
+      <span class="timeline-kind kind-data">DATA</span>
+      <strong>mbti.updated</strong>
+      
+      <span style="color:#67e8f9"> [user:0f5d7edc]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"0f5d7edc-7bf8-470b-97e2-4ec3416dac3b","type":"ENTJ","confidence":0.73}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:43.178</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>updateMbtiFromMessages</strong>
+      <span style="color:#888"> (6243ms)</span>
+      <span style="color:#67e8f9"> [user:0f5d7edc]</span>
+      
+      
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:43.171</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.done</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"0f5d7edc-7bf8-470b-97e2-4ec3416dac3b","round":3,"replyLen":81,"tokens":{"inputTokens":256,"outputTokens":180,"cacheHitTokens":128,"cacheMissTokens":128}}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:43.163</span>
+      <span class="timeline-kind kind-token">TOKEN</span>
+      <strong>llm.chat.round.3</strong>
+      
+      <span style="color:#67e8f9"> [user:0f5d7edc]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"model":"deepseek-v4-flash","promptTokens":256,"completionTokens":180,"totalTokens":436,"cacheHitTokens":128,"cacheMissTokens":128,"hitRate":0.5,"costYuan":0.0005}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:39.983</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>chatStream</strong>
+      <span style="color:#888"> (3172ms)</span>
+      <span style="color:#67e8f9"> [user:0f5d7edc]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"round":3,"historyLen":6}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:39.978</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.start</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"0f5d7edc-7bf8-470b-97e2-4ec3416dac3b","round":3,"msgLen":42}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:39.973</span>
+      <span class="timeline-kind kind-data">DATA</span>
+      <strong>mbti.updated</strong>
+      
+      <span style="color:#67e8f9"> [user:0f5d7edc]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"0f5d7edc-7bf8-470b-97e2-4ec3416dac3b","type":"ENTJ","confidence":0.7}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:34.167</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>updateMbtiFromMessages</strong>
+      <span style="color:#888"> (5800ms)</span>
+      <span style="color:#67e8f9"> [user:0f5d7edc]</span>
+      
+      
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:34.161</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.done</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"0f5d7edc-7bf8-470b-97e2-4ec3416dac3b","round":2,"replyLen":72,"tokens":{"inputTokens":187,"outputTokens":220,"cacheHitTokens":0,"cacheMissTokens":187}}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:34.156</span>
+      <span class="timeline-kind kind-token">TOKEN</span>
+      <strong>llm.chat.round.2</strong>
+      
+      <span style="color:#67e8f9"> [user:0f5d7edc]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"model":"deepseek-v4-flash","promptTokens":187,"completionTokens":220,"totalTokens":407,"cacheHitTokens":0,"cacheMissTokens":187,"hitRate":0,"costYuan":0.0006}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:30.570</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>chatStream</strong>
+      <span style="color:#888"> (3580ms)</span>
+      <span style="color:#67e8f9"> [user:0f5d7edc]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"round":2,"historyLen":4}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:30.565</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.start</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"0f5d7edc-7bf8-470b-97e2-4ec3416dac3b","round":2,"msgLen":71}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:30.560</span>
+      <span class="timeline-kind kind-data">DATA</span>
+      <strong>mbti.updated</strong>
+      
+      <span style="color:#67e8f9"> [user:0f5d7edc]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"0f5d7edc-7bf8-470b-97e2-4ec3416dac3b","type":"UNKNOWN","confidence":0.62}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:25.987</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>updateMbtiFromMessages</strong>
+      <span style="color:#888"> (4566ms)</span>
+      <span style="color:#67e8f9"> [user:0f5d7edc]</span>
+      
+      
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:25.977</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.done</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"0f5d7edc-7bf8-470b-97e2-4ec3416dac3b","round":1,"replyLen":60,"tokens":{"inputTokens":120,"outputTokens":161,"cacheHitTokens":0,"cacheMissTokens":120}}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:25.972</span>
+      <span class="timeline-kind kind-token">TOKEN</span>
+      <strong>llm.chat.round.1</strong>
+      
+      <span style="color:#67e8f9"> [user:0f5d7edc]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"model":"deepseek-v4-flash","promptTokens":120,"completionTokens":161,"totalTokens":281,"cacheHitTokens":0,"cacheMissTokens":120,"hitRate":0,"costYuan":0.0004}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:22.619</span>
+      <span class="timeline-kind kind-fn">FN</span>
+      <strong>chatStream</strong>
+      <span style="color:#888"> (3345ms)</span>
+      <span style="color:#67e8f9"> [user:0f5d7edc]</span>
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"round":1,"historyLen":2}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:22.612</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>chat.round.start</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"0f5d7edc-7bf8-470b-97e2-4ec3416dac3b","round":1,"msgLen":41}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:22.606</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>user.chat.start</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"0f5d7edc-7bf8-470b-97e2-4ec3416dac3b","username":"alice_intj"}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:22.600</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>phase.2.chat.start</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"users":4,"rounds":5}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:22.594</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>phase.1.register.done</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"count":4}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:22.587</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>user.reuse</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"f2c12dbf-aa74-49a1-ad74-4d89f2c5e3d8","username":"david_entp"}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:22.581</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>user.register.failed</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"username":"david_entp","error":"用户名已被占用"}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:22.575</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>user.reuse</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"695f216e-eb07-48ee-813e-c5c462920d4a","username":"carol_isfj"}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:22.569</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>user.register.failed</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"username":"carol_isfj","error":"用户名已被占用"}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:22.564</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>user.reuse</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"2fc9fb7f-8251-4fa6-884f-0ee2ccc060be","username":"bob_enfp"}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:22.558</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>user.register.failed</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"username":"bob_enfp","error":"用户名已被占用"}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:22.552</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>user.reuse</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"userId":"0f5d7edc-7bf8-470b-97e2-4ec3416dac3b","username":"alice_intj"}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:22.470</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>user.register.failed</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"username":"alice_intj","error":"用户名已被占用"}</div>
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:22.433</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>phase.1.register.start</strong>
+      
+      
+      
+      
+    </div>
+    <div class="timeline-item">
+      <span class="timeline-time">13:08:22.423</span>
+      <span class="timeline-kind kind-event">EVENT</span>
+      <strong>test.start</strong>
+      
+      
+      
+      <div style="color:#888; margin-left: 24px; font-size: 11px;">{"users":4,"llmEnabled":true}</div>
+    </div>
+  </div>
+
+  <h2>🔧 系统信息</h2>
+  <pre>{
+  "node": "v22.19.0",
+  "platform": "win32",
+  "llmEnabled": true,
+  "llmModel": "deepseek-v4-flash",
+  "compressConfig": {
+    "contextWindowTokens": 64000,
+    "autoCompactThreshold": 0.95,
+    "microCompactThreshold": 0.7
+  }
+}</pre>
+</body>
+</html>

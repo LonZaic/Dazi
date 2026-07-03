@@ -1,0 +1,150 @@
+/* ============================================================
+   全局样式 — App 容器、滚动条、通用工具类
+   完全对齐 DeepSeek-Super 视觉语言：暖灰深空底 + 顶部蓝光渐变
+   ============================================================ */
+html, body, #app {
+  height: 100%;
+  margin: 0;
+  font-family: var(--font-sans);
+  background-color: var(--bg);
+  background-image: var(--body-bg-gradient);
+  background-attachment: fixed;
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ─── 全局滚动条（DeepSeek-Super 经典细滚动条）─── */
+*::-webkit-scrollbar { width: var(--scrollbar-width); height: var(--scrollbar-width); }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.10);
+  border-radius: var(--radius-full);
+}
+*::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.18); }
+
+.app-root {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.app-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: 100vh;
+}
+
+/* 通用按钮 */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--fs-base);
+  font-weight: 500;
+  transition: all var(--dur-fast) var(--ease-out);
+  white-space: nowrap;
+}
+
+.btn-primary {
+  background: var(--accent-primary);
+  color: var(--text-on-accent);
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-primary-hover);
+  box-shadow: var(--shadow-glow);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-default);
+}
+.btn-ghost:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.btn-danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+  border: 1px solid transparent;
+}
+.btn-danger:hover:not(:disabled) {
+  background: var(--danger);
+  color: var(--text-on-accent);
+}
+
+/* 通用卡片 */
+.card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+}
+
+/* 标签芯片 */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  background: var(--accent-primary-soft);
+  color: var(--accent-primary);
+  border: 1px solid transparent;
+}
+.chip-warm { background: var(--match-warm-soft); color: var(--match-warm); }
+.chip-success { background: var(--success-soft); color: var(--success); }
+.chip-neutral { background: var(--bg-hover); color: var(--text-secondary); }
+
+/* 空状态 */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-12);
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+/* 页面标题 */
+.page-title {
+  font-size: var(--fs-2xl);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.page-subtitle {
+  font-size: var(--fs-md);
+  color: var(--text-secondary);
+  margin-top: var(--space-1);
+}
+
+/* 加载占位 */
+.loading-bar {
+  height: 3px;
+  background: var(--accent-primary-soft);
+  overflow: hidden;
+  position: relative;
+}
+.loading-bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--accent-primary);
+  animation: shimmer 1.2s infinite;
+  background: linear-gradient(90deg, transparent, var(--accent-primary), transparent);
+}
