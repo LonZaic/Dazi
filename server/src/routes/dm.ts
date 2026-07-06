@@ -83,10 +83,16 @@ dmRouter.get('/rooms', requireAuth, (req, res) => {
       (SELECT COUNT(*) FROM dm_messages
          WHERE room_id = r.id AND sender_id != ? AND read_at IS NULL) AS unread_count,
       ua.display_name AS user_a_name,
-      ub.display_name AS user_b_name
+      ub.display_name AS user_b_name,
+      uha.avatar_url AS user_a_avatar,
+      uhb.avatar_url AS user_b_avatar,
+      uha.avatar_color AS user_a_avatar_color,
+      uhb.avatar_color AS user_b_avatar_color
     FROM dm_rooms r
     JOIN users ua ON ua.id = r.user_a
     JOIN users ub ON ub.id = r.user_b
+    LEFT JOIN user_home uha ON uha.user_id = r.user_a
+    LEFT JOIN user_home uhb ON uhb.user_id = r.user_b
     WHERE r.tenant_id = ? AND (r.user_a = ? OR r.user_b = ?)
     ORDER BY r.last_message_at DESC
   `).all(userId, tenantId, userId, userId) as Array<{
@@ -95,16 +101,22 @@ dmRouter.get('/rooms', requireAuth, (req, res) => {
     last_content: string | null; last_sender_id: string | null
     unread_count: number
     user_a_name: string | null; user_b_name: string | null
+    user_a_avatar: string | null; user_b_avatar: string | null
+    user_a_avatar_color: string | null; user_b_avatar_color: string | null
   }>
 
   res.json({
     rooms: rows.map(r => {
       const otherId = otherUserId(r, userId)
       const otherName = r.user_a === userId ? (r.user_b_name || '匿名用户') : (r.user_a_name || '匿名用户')
+      const otherAvatar = r.user_a === userId ? (r.user_b_avatar || '') : (r.user_a_avatar || '')
+      const otherAvatarColor = r.user_a === userId ? (r.user_b_avatar_color || '#6366f1') : (r.user_a_avatar_color || '#6366f1')
       return {
         roomId: r.id,
         otherUserId: otherId,
         otherDisplayName: otherName,
+        otherAvatarUrl: otherAvatar,
+        otherAvatarColor: otherAvatarColor,
         lastContent: r.last_content || '',
         lastSenderId: r.last_sender_id || '',
         lastMessageAt: r.last_message_at,
@@ -192,22 +204,29 @@ dmRouter.get('/rooms/:roomId/messages', requireAuth, (req, res) => {
   const limit = Math.min(Number(req.query.limit) || 50, 200)
 
   const rows = db.prepare(`
-    SELECT id, sender_id, content, created_at, read_at
+    SELECT id, sender_id, content, meta_json, created_at, read_at
     FROM dm_messages
     WHERE room_id = ? AND id > ?
     ORDER BY id ASC LIMIT ?
   `).all(roomId, since, limit) as Array<{
-    id: number; sender_id: string; content: string; created_at: number; read_at: number | null
+    id: number; sender_id: string; content: string; meta_json: string | null; created_at: number; read_at: number | null
   }>
 
   res.json({
-    messages: rows.map(r => ({
-      id: String(r.id),
-      senderId: r.sender_id,
-      content: r.content,
-      createdAt: r.created_at,
-      read: r.read_at !== null,
-    })),
+    messages: rows.map(r => {
+      let images: string[] = []
+      let files: Array<{ name: string; size: number; type?: string; content?: string }> = []
+      try { const mj = r.meta_json ? JSON.parse(r.meta_json) : {}; images = mj.images || []; files = mj.files || [] } catch {}
+      return {
+        id: String(r.id),
+        senderId: r.sender_id,
+        content: r.content,
+        images,
+        files,
+        createdAt: r.created_at,
+        read: r.read_at !== null,
+      }
+    }),
   })
 })
 
@@ -215,15 +234,55 @@ dmRouter.get('/rooms/:roomId/messages', requireAuth, (req, res) => {
 // POST /rooms/:roomId/messages — 发消息
 // ─────────────────────────────────────────────────────
 dmRouter.post('/rooms/:roomId/messages', requireAuth, async (req, res) => {
-  const { content } = req.body || {}
-  if (!content || typeof content !== 'string' || content.trim().length === 0) {
+  const { content, images, files } = req.body || {}
+  const hasText = content && typeof content === 'string' && content.trim().length > 0
+  const hasImages = Array.isArray(images) && images.length > 0
+  const hasFiles = Array.isArray(files) && files.length > 0
+  if (!hasText && !hasImages && !hasFiles) {
     res.status(400).json({ error: '消息不能为空' })
     return
   }
-  if (content.length > 1000) {
-    res.status(400).json({ error: '消息过长（上限 1000 字）' })
+
+  const textContent = content?.trim() || ''
+  const MAX_TEXT = 2000
+  const MAX_IMAGES = 4
+  const MAX_FILES = 5
+  const MAX_FILE_SIZE = 10 * 1024 * 1024  // 10MB
+
+  if (textContent.length > MAX_TEXT) {
+    res.status(400).json({ error: `文本过长（上限${MAX_TEXT}字）` })
     return
   }
+  if (hasImages && images.length > MAX_IMAGES) {
+    res.status(400).json({ error: `最多附带${MAX_IMAGES}张图片` })
+    return
+  }
+  if (hasFiles && files.length > MAX_FILES) {
+    res.status(400).json({ error: `最多附带${MAX_FILES}个文件` })
+    return
+  }
+
+  // 校验图片格式（只保留 dataURL）
+  const safeImages: string[] = []
+  if (hasImages) {
+    for (const img of images) {
+      if (typeof img === 'string' && img.startsWith('data:image/')) {
+        safeImages.push(img)
+      }
+    }
+  }
+
+  // 校验文件格式
+  const safeFiles: Array<{ name: string; size: number; type?: string; content?: string }> = []
+  if (hasFiles) {
+    for (const f of files) {
+      if (f && typeof f.name === 'string' && typeof f.size === 'number' && f.size <= MAX_FILE_SIZE) {
+        safeFiles.push({ name: f.name, size: f.size, type: f.type || '', content: typeof f.content === 'string' ? f.content.slice(0, MAX_TEXT) : '' })
+      }
+    }
+  }
+
+  const metaJson = JSON.stringify({ images: safeImages, files: safeFiles })
 
   const db = getDB()
   const roomId = req.params.roomId
@@ -247,9 +306,9 @@ dmRouter.post('/rooms/:roomId/messages', requireAuth, async (req, res) => {
 
   const now = Math.floor(Date.now() / 1000)
   const info = db.prepare(`
-    INSERT INTO dm_messages (room_id, tenant_id, sender_id, content, created_at)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(roomId, tenantId, userId, content.trim(), now)
+    INSERT INTO dm_messages (room_id, tenant_id, sender_id, content, meta_json, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(roomId, tenantId, userId, textContent, metaJson, now)
 
   // 更新房间最近消息时间（列表排序用）
   db.prepare('UPDATE dm_rooms SET last_message_at = ? WHERE id = ?').run(now, roomId)
@@ -264,7 +323,9 @@ dmRouter.post('/rooms/:roomId/messages', requireAuth, async (req, res) => {
     message: {
       id: String(info.lastInsertRowid),
       senderId: userId,
-      content: content.trim(),
+      content: textContent,
+      images: safeImages,
+      files: safeFiles,
       createdAt: now,
       read: false,
     },
@@ -348,20 +409,24 @@ dmRouter.get('/rooms/:roomId/stream', requireAuth, async (req: Request, res: Res
     // 轮询循环：每 1.5s 查一次新消息
     while (!aborted) {
       const rows = db.prepare(`
-        SELECT id, sender_id, content, created_at
+        SELECT id, sender_id, content, meta_json, created_at
         FROM dm_messages
         WHERE room_id = ? AND id > ? AND sender_id != ?
         ORDER BY id ASC
       `).all(roomId, sinceId, userId) as Array<{
-        id: number; sender_id: string; content: string; created_at: number
+        id: number; sender_id: string; content: string; meta_json: string | null; created_at: number
       }>
 
       for (const r of rows) {
         if (aborted) break
+        let images: string[] = [], files: any[] = []
+        try { const mj = r.meta_json ? JSON.parse(r.meta_json) : {}; images = mj.images || []; files = mj.files || [] } catch {}
         sse(res, 'message', {
           id: String(r.id),
           senderId: r.sender_id,
           content: r.content,
+          images,
+          files,
           createdAt: r.created_at,
         })
         sinceId = r.id   // 推进游标
@@ -379,6 +444,79 @@ dmRouter.get('/rooms/:roomId/stream', requireAuth, async (req: Request, res: Res
     }
   } catch {
     // 出错静默退出，不向已关闭的流写
+  } finally {
+    clearInterval(heartbeat)
+    res.end()
+  }
+})
+
+// ─────────────────────────────────────────────────────
+// GET /notify — 全局 DM 通知 SSE（app 启动就连接）
+//
+// 监听当前用户所有房间的所有新消息（包括自己发的），
+// 实时推给前端，前端更新侧栏未读数 + 房间列表。
+// 和 /rooms/:roomId/stream 区别：
+//   - 全局，不绑定某个房间
+//   - 推所有消息（含自己发的），前端按需处理
+//   - 不标记已读（已读由 openRoom 处理）
+// ─────────────────────────────────────────────────────
+dmRouter.get('/notify', requireAuth, async (req: Request, res: Response) => {
+  const db = getDB()
+  const userId = req.user!.id
+
+  res.setHeader('Content-Type', 'text/event-stream')
+  res.setHeader('Cache-Control', 'no-cache, no-transform')
+  res.setHeader('Connection', 'keep-alive')
+  res.setHeader('X-Accel-Buffering', 'no')
+  res.flushHeaders?.()
+
+  let sinceId = Number(req.query.since) || 0
+  let aborted = false
+  res.on('close', () => { aborted = true })
+
+  const heartbeat = setInterval(() => {
+    if (aborted) return
+    try { sse(res, 'ping', { ts: Date.now() }) } catch { /* */ }
+  }, 25_000)
+
+  try {
+    while (!aborted) {
+      // 查所有涉及我的房间的新消息
+      const rows = db.prepare(`
+        SELECT m.id, m.room_id, m.sender_id, m.content, m.meta_json, m.created_at
+        FROM dm_messages m
+        WHERE m.id > ?
+          AND m.room_id IN (
+            SELECT id FROM dm_rooms WHERE user_a = ? OR user_b = ?
+          )
+        ORDER BY m.id ASC
+      `).all(sinceId, userId, userId) as Array<{
+        id: number; room_id: string; sender_id: string; content: string; meta_json: string | null; created_at: number
+      }>
+
+      for (const r of rows) {
+        if (aborted) break
+        let images: string[] = [], files: any[] = []
+        try { const mj = r.meta_json ? JSON.parse(r.meta_json) : {}; images = mj.images || []; files = mj.files || [] } catch {}
+        sse(res, 'message', {
+          id: String(r.id),
+          roomId: r.room_id,
+          senderId: r.sender_id,
+          content: r.content,
+          images,
+          files,
+          createdAt: r.created_at,
+        })
+        sinceId = r.id
+      }
+
+      await new Promise<void>((resolve) => {
+        const t = setTimeout(resolve, 1500)
+        res.on('close', () => { clearTimeout(t); resolve() })
+      })
+    }
+  } catch {
+    /* 静默退出 */
   } finally {
     clearInterval(heartbeat)
     res.end()

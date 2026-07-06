@@ -5,10 +5,16 @@
         <h2 class="page-title">智能匹配</h2>
         <p class="page-subtitle">向量召回 + 多因子规则排序 · 每个推荐都可解释</p>
       </div>
-      <button class="run-btn" :disabled="match.loading" @click="onRun">
-        <AppIcon name="refresh" :size="16" :class="{ spin: match.loading }" />
-        <span>{{ match.loading ? '匹配中...' : '重新匹配' }}</span>
-      </button>
+      <div class="header-actions">
+        <label class="auto-toggle" title="画像变化时自动刷新推荐">
+          <input type="checkbox" v-model="autoRefresh" />
+          <span class="toggle-label">自动推荐</span>
+        </label>
+        <button class="run-btn" :disabled="match.loading" @click="onRun">
+          <AppIcon name="refresh" :size="16" :class="{ spin: match.loading }" />
+          <span>{{ match.loading ? '匹配中...' : '重新匹配' }}</span>
+        </button>
+      </div>
     </header>
 
     <div class="match-body">
@@ -73,7 +79,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import AppIcon from '../components/common/AppIcon.vue'
 import MatchCard from '../components/MatchCard.vue'
@@ -91,16 +97,39 @@ const router = useRouter()
 const topK = ref(20)
 const hasProfile = ref(false)
 const dmLoading = ref({})
+const autoRefresh = ref(true)
+let pollTimer = null
 
 async function onRun() {
   try {
     await match.run()
+    match.lastConfidence = profile.confidence
   } catch (e) {
     if (e.message?.includes('画像')) {
       hasProfile.value = false
     }
   }
 }
+
+// ★ 自动推荐：每 10 秒检测画像置信度变化，变化则自动刷新匹配
+function startAutoPoll() {
+  stopAutoPoll()
+  pollTimer = setInterval(async () => {
+    if (!autoRefresh.value || match.loading) return
+    try {
+      await profile.load()
+      hasProfile.value = !!profile.profile && profile.profile.interests.length > 0
+      if (hasProfile.value && Math.abs(profile.confidence - match.lastConfidence) > 0.02) {
+        await match.run()
+        match.lastConfidence = profile.confidence
+      }
+    } catch { /* */ }
+  }, 10_000)
+}
+function stopAutoPoll() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+}
+watch(autoRefresh, (on) => { if (on) startAutoPoll(); else stopAutoPoll() })
 
 async function onIcebreaker(userId) {
   await match.generateIcebreaker(userId)
@@ -126,9 +155,18 @@ onMounted(async () => {
   await profile.load()
   hasProfile.value = !!profile.profile && profile.profile.interests.length > 0
   if (hasProfile.value) {
-    await match.run()
+    // 已有结果且置信度未大变 → 直接用缓存，不重新拉
+    if (match.candidates.length > 0 && Math.abs(profile.confidence - match.lastConfidence) < 0.05) {
+      // 复用已有结果
+    } else {
+      await match.run()
+      match.lastConfidence = profile.confidence
+    }
   }
+  if (autoRefresh.value) startAutoPoll()
 })
+
+onUnmounted(() => { stopAutoPoll() })
 </script>
 
 <style scoped>
@@ -161,6 +199,19 @@ onMounted(async () => {
   background: var(--accent-primary-hover);
   box-shadow: var(--shadow-glow);
 }
+.header-actions {
+  display: flex; align-items: center; gap: var(--space-3);
+}
+.auto-toggle {
+  display: flex; align-items: center; gap: var(--space-1);
+  cursor: pointer; user-select: none;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+}
+.auto-toggle input { accent-color: var(--accent-primary); }
+.toggle-label { font-size: var(--fs-xs); color: var(--text-secondary); }
 .spin { animation: spin 0.8s linear infinite; }
 
 .match-body {

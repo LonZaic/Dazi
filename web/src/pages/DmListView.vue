@@ -34,12 +34,13 @@
           class="room-item card"
           v-for="room in dm.rooms"
           :key="room.roomId"
-          @click="enterRoom(room)"
         >
-          <div class="avatar">{{ initial(room.otherDisplayName) }}</div>
-          <div class="room-main">
+          <div class="avatar clickable" @click.stop="goToUser(room.otherUserId)">{{ initial(room.otherDisplayName) }}</div>
+          <div class="room-main" @click="enterRoom(room)">
             <div class="room-top">
-              <span class="room-name">{{ room.otherDisplayName }}</span>
+              <span class="room-name">
+                {{ room.otherDisplayName }}
+              </span>
               <span class="room-time">{{ formatTime(room.lastMessageAt) }}</span>
             </div>
             <div class="room-bottom">
@@ -88,8 +89,12 @@ function enterRoom(room) {
   router.push({
     name: 'dm-room',
     params: { roomId: room.roomId },
-    query: { name: room.otherDisplayName, uid: room.otherUserId },
+    query: { name: room.otherDisplayName, uid: room.otherUserId, avatar: room.otherAvatarUrl || '', avatarColor: room.otherAvatarColor || '#6366f1' },
   })
+}
+
+function goToUser(userId) {
+  if (userId) router.push(`/home/${userId}`)
 }
 </script>
 
@@ -186,6 +191,8 @@ function enterRoom(room) {
   font-size: var(--fs-md);
   flex-shrink: 0;
 }
+.avatar.clickable { cursor: pointer; }
+.avatar.clickable:hover { opacity: 0.85; transform: scale(1.05); transition: all .15s; }
 .room-main { flex: 1; min-width: 0; }
 .room-top {
   display: flex;

@@ -67,14 +67,19 @@ const router = createRouter({
   },
 })
 
-router.beforeEach((to) => {
+// 用 Promise 确保每次刷新先初始化认证态再路由判定
+let _initPromise = null
+
+router.beforeEach(async (to) => {
   const auth = useAuthStore()
+  // 确保只初始化一次
+  if (!_initPromise) _initPromise = auth.init()
+  await _initPromise
+
   if (!to.meta.public && !auth.isLoggedIn) {
     return { name: 'login', query: { redirect: to.fullPath } }
   }
-  if (to.name === 'login' && auth.isLoggedIn) {
-    return { name: 'chat' }
-  }
+  // 已登录用户也可以访问登录页（方便切号测试）
 })
 
 export default router

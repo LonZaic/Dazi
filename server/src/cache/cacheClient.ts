@@ -161,7 +161,7 @@ export function appendToolResult(conv: CachedConversation, content: string): voi
 export async function chatStreamCached(
   conv: CachedConversation,
   cb: CacheStreamCallbacks,
-  opts: { maxTokens?: number; temperature?: number; signal?: AbortSignal } = {},
+  opts: { maxTokens?: number; temperature?: number; signal?: AbortSignal; deepThinking?: boolean; tools?: Array<{ type: string; function: Record<string, unknown> }>; executeTool?: (name: string, args: Record<string, unknown>) => Promise<string> } = {},
 ): Promise<{ text: string; reasoning: string; usage: CacheUsagePayload }> {
   if (!llmEnabled) {
     const err = new Error('LLM 未配置 API Key')
@@ -195,6 +195,9 @@ export async function chatStreamCached(
 
   // ③ 调 llmClient.chatStream（复用统一入口，不在 cache 层重复写 fetch）
   //   llmClient 已在 2026.07 补齐 prompt_cache_hit_tokens 字段，无需单独 fetch
+  if (opts.tools && opts.tools.length > 0) {
+    console.log(`[cache] 带 ${opts.tools.length} 个工具调 LLM: ${opts.tools.map((t: any) => t.function?.name).join(', ')}`)
+  }
   let fullText = ''
   let fullReasoning = ''
   let usagePayload: CacheUsagePayload = { promptTokens: 0, completionTokens: 0 }
@@ -227,6 +230,48 @@ export async function chatStreamCached(
     // result 里已有完整 text/reasoning，但 onDelta 回调已经边收边推了
     fullText = result.text
     fullReasoning = result.reasoning
+
+    // ★ Function calling 循环（缓存层内部处理，确保最终回复写入 conv.log）
+    if (result.toolCalls && result.toolCalls.length > 0 && opts.executeTool) {
+      addStep('info', { event: 'function_calling', count: result.toolCalls.length })
+
+      // 把 assistant 的 tool_calls 加入 messages（不写 conv.log，tool 调用是临时上下文）
+      messages.push({
+        role: 'assistant',
+        content: null,
+        tool_calls: result.toolCalls.map(tc => ({
+          id: tc.id, type: 'function' as const,
+          function: { name: tc.name, arguments: tc.args },
+        })),
+      })
+
+      // 执行每个工具
+      for (const tc of result.toolCalls) {
+        let args: Record<string, unknown> = {}
+        try { args = JSON.parse(tc.args) } catch { /* */ }
+        const toolResult = await opts.executeTool(tc.name, args)
+        messages.push({ role: 'tool', content: toolResult, tool_call_id: tc.id })
+        addStep('tool_result', { tool: tc.name, resultLen: toolResult.length })
+      }
+
+      // 再调 LLM 生成最终回复（不带 tools，防止再触发）
+      fullText = ''
+      const finalResult = await chatStream(
+        messages,
+        {
+          onDelta: (d) => { fullText += d; cb.onDelta?.(d) },
+          onUsage: (u) => {
+            usagePayload.promptTokens += u.inputTokens
+            usagePayload.completionTokens += u.outputTokens
+          },
+        },
+        { maxTokens: opts.maxTokens, temperature: opts.temperature, signal: opts.signal, deepThinking: opts.deepThinking },
+        // ★ 不传 tools，防止无限循环
+      )
+
+      fullText = finalResult.text
+    }
+
     usagePayload = {
       promptTokens: result.usage.inputTokens,
       completionTokens: result.usage.outputTokens,

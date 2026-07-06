@@ -93,7 +93,7 @@ import { BaseAgent, type AgentContext, type AgentResult } from './baseAgent.js'
 import {
   type Profile, type ProfilePatch, applyPatch, computeConfidence, createEmptyProfile, profileToText,
 } from './profileSchema.js'
-import { chatStream, chatOnce, llmEnabled, type ChatMessage, type LLMUsage } from '../services/llmClient.js'
+import { chatStream, chatOnce, llmEnabled, type ChatMessage } from '../services/llmClient.js'
 import { chatWithCache } from '../integrations/cacheLlmAdapter.js'
 import { profileAdapter } from '../integrations/agentMemoryAdapter.js'
 import { embed } from '../services/embedding.js'
@@ -101,6 +101,8 @@ import { getDB } from '../db/index.js'
 import { config } from '../config/index.js'
 import { extractJSON, quickFixJSON, validateJSON } from '../core/structuredOutput.js'
 import { addStep, startSpan, endSpan } from '../core/tracer.js'
+import { dispatchToolCall } from '../tools/registry.js'
+import type { ToolDef } from '../tools/registry.js'
 import { estimateTextTokens } from '../core/tokenBudget.js'
 
 const PATCH_SCHEMA = {
@@ -291,10 +293,12 @@ export class ProfileAgent extends BaseAgent<ProfileAgentInput, ProfileAgentOutpu
     signal?: AbortSignal,
     onReasoning?: (text: string) => void,
     sessionId?: string,
+    deepThinking?: boolean,
+    tools?: ToolDef[],
   ): Promise<{ text: string; reasoning: string }> {
     if (llmEnabled) {
       try {
-        return await this.streamReplyLLM(messages, profile, onDelta, ctx, signal, onReasoning, sessionId)
+        return await this.streamReplyLLM(messages, profile, onDelta, ctx, signal, onReasoning, sessionId, deepThinking, tools)
       } catch (e) {
         // LLM 失败降级到模板，保证用户总有回复（不能让聊天卡死）
         addStep('info', { event: 'llm_reply_failed', error: (e as Error).message })
@@ -325,28 +329,35 @@ export class ProfileAgent extends BaseAgent<ProfileAgentInput, ProfileAgentOutpu
     signal: AbortSignal | undefined,
     onReasoning?: (text: string) => void,
     sessionId?: string,
+    deepThinking?: boolean,
+    tools?: ToolDef[],
   ): Promise<{ text: string; reasoning: string }> {
     const profileSummary = profileToText(profile) || '（画像采集中）'
-    const sysContent = `你是"搭子匹配官"，一个温暖、专业的社交匹配助手。你在和用户自然聊天，目标是了解TA的兴趣、社交风格、找搭子目标，以便后续精准匹配。
+    const sysContent = `你是一个聪明、真诚的 AI 伙伴。你在和用户像朋友一样自然聊天——不预设话题、不刻意引导，用户可以跟你聊任何事：技术问题、生活日常、想法困惑、甚至是随手发一个文件问你这是什么。
 
-当前已知的用户画像：${profileSummary}
+你的核心能力：
+- 你能回答问题、分析代码、解释概念、阅读文件、给建议——就像一个全能朋友
+- 用户可以上传各种文件：代码文件（.py/.ts/.js/.vue/.go 等）、文档（.md/.txt/.pdf/.docx/.pptx/.xlsx）、图片（自动 OCR 识别文字）等
+- 当用户问"这文件里写了什么"、"帮我看一下这个文件"、"原样输出这个文件"时，用 read_file 工具读取文件内容，然后按用户要求处理：
+  - 问里面写了什么 → 简要概括 + 关键点
+  - 问原样输出 → 用 \`\`\`代码块完整输出文件内容，不要省略、不要截断
+  - 问分析代码 → 读取后给出分析、建议或改进
+- 文件内容已经在你看到的用户消息里（小文件）或可通过 read_file 工具读取（大文件）
+- 聊天要自然、接地气，不要机械、不要说教
 
-对话原则：
-1. 像朋友聊天，绝不审问、不一次问太多
-2. 每轮只聚焦1个方向，根据用户回答自然追问或转移
-3. 用户说得越具体越好（喜欢什么运动/什么音乐/周末做什么）
-4. 不要复述用户的话，不要说"好的""了解了"等废话
-5. 当画像较完整（兴趣≥3个、风格明确、目标清晰）时，可以温和提示"我觉得可以帮你找搭子了"
-6. 回复控制在2-3句话，自然口语化
+在自然聊天的过程中，你也会默默了解用户，但这完全是在后台进行的，不要在对话中主动提"搭子""匹配""画像"这些词。具体原则：
+1. 像真朋友一样聊天，不用刻意问什么，顺着用户的话题走
+2. 用户跟你聊技术就聊技术，聊生活就聊生活，聊心情就聊心情
+3. 你的回复要简短自然（2-4句），有温度但不油腻
+4. 如果用户直接问关于匹配/找朋友的问题，再用轻松的语气回应，但不要推销平台
+5. 不要复述用户的话，不要说"好的""了解了"这种废话
+6. 当用户让你原样输出文件时，回复可以长一些——完整输出文件内容是最高优先级
 
-场景图片返问（助力找搭子）：
-- 当想了解用户偏好的活动场景（如爬山/咖啡/图书馆/健身房/露营等）时，
-  可以输出 [gen:图片描述] 标记，前端会把它渲染成一张 AI 生成的真实图片。
-- 一次最多输出 3 个 [gen:...] 标记，配上一句引导，如：
-  "周末想怎么过？选个感觉：" 然后换行列出 [gen:山顶日出 写实 风景] [gen:咖啡馆 温馨 室内] [gen:图书馆 安静 室内]
-- 图片描述用中文+风格词（写实/动漫/水彩），描述越具体出图越准。
-- 不要每轮都用，只在需要了解活动偏好时用，避免刷屏。
-- 用户发了图片（content 里带 [用户发送了N张图片]）时，可以温和追问图里的活动，但你知道自己看不到图片内容。`
+当前你对用户的了解：${profileSummary || '（刚认识，还不太了解）'}
+
+关于图片生成标记 [gen:描述]：
+- 偶尔在和用户聊到场景/活动时，可以用 [gen:图片描述] 生成图片来让对话更生动
+- 一次最多 2-3 个，配一句自然引导，不要每轮都用`
 
     // ★ 接入 cache 模块：用 chatWithCache 替代 chatStream
     //   cache 模块内部维护 prefix(system) + log(对话历史)，
@@ -354,9 +365,12 @@ export class ProfileAgent extends BaseAgent<ProfileAgentInput, ProfileAgentOutpu
     //   - 只传最新 user message，cache 模块自己拼完整 history
     //   - 如果没有 sessionId（异常情况），降级到 chatStream
     const lastUserMsg = messages.filter(m => m.role === 'user').slice(-1)[0]
+    const hasTools = tools && tools.length > 0
 
     if (sessionId && lastUserMsg) {
-      // ★ 主路径：走 cache（省钱）
+      // ★ 主路径：走 cache（省钱），内置 function calling 循环
+      //   chatWithCache → chatStreamCached 内部处理 tool_calls，
+      //   最终回复会正确写入 conv.log，保持 prefix cache 完整性
       const result = await chatWithCache(
         ctx.userId,
         sessionId,
@@ -366,22 +380,21 @@ export class ProfileAgent extends BaseAgent<ProfileAgentInput, ProfileAgentOutpu
           onText: onDelta,
           onReasoning,
           onUsage: (u: unknown) => {
-            // chatWithCache 返回 CacheUsagePayload（字段名 promptTokens/completionTokens）
             const cu = u as { promptTokens?: number; completionTokens?: number }
-            ctx.budget.recordApiUsage(
-              cu.promptTokens || 0,
-              cu.completionTokens || 0,
-            )
+            ctx.budget.recordApiUsage(cu.promptTokens || 0, cu.completionTokens || 0)
           },
         },
-        { signal, maxTokens: 8192, temperature: 0.7 },
+        {
+          signal, maxTokens: 8192, temperature: 0.7, deepThinking,
+          tools: hasTools ? tools : undefined,
+          executeTool: hasTools
+            ? async (name: string, args: Record<string, unknown>) => dispatchToolCall(name, args, ctx.userId)
+            : undefined,
+        },
       )
-      // ★ cache 模块返回 CacheUsagePayload（不是 LLMUsage），字段名要对应
       const cu = result.usage as {
-        promptTokens: number
-        completionTokens: number
-        promptCacheHitTokens?: number
-        promptCacheMissTokens?: number
+        promptTokens: number; completionTokens: number
+        promptCacheHitTokens?: number; promptCacheMissTokens?: number
       }
       const inputTokens = cu.promptTokens || 0
       const outputTokens = cu.completionTokens || 0
@@ -392,7 +405,7 @@ export class ProfileAgent extends BaseAgent<ProfileAgentInput, ProfileAgentOutpu
         cacheMiss: cu.promptCacheMissTokens || 0,
       }, inputTokens + outputTokens)
 
-      // ★ Layer 1 记忆写入已改由 chat.ts 统一管理（避免重复）
+      // ★ tool_calls 已在 cache 层内部处理完毕，直接返回最终回复
       return { text: result.text, reasoning: result.reasoning }
     }
 
@@ -401,17 +414,111 @@ export class ProfileAgent extends BaseAgent<ProfileAgentInput, ProfileAgentOutpu
       role: m.role === 'user' ? 'user' : 'assistant',
       content: m.content,
     }))
-    const { text, reasoning, usage } = await chatStream(
+    const { text, reasoning, usage, toolCalls } = await chatStream(
       [{ role: 'system', content: sysContent }, ...history],
       {
         onDelta,
         onReasoning,
         onUsage: (u) => ctx.budget.recordApiUsage(u.inputTokens, u.outputTokens),
       },
-      { maxTokens: 8192, temperature: 0.7, signal },
+      { maxTokens: 8192, temperature: 0.7, signal, deepThinking, tools: hasTools ? tools : undefined },
     )
-    addStep('llm_call', { event: 'reply.uncached', model: config.llm.model }, usage.inputTokens + usage.outputTokens)
+    addStep('llm_call', { event: 'reply.uncached', model: deepThinking ? 'deepseek-reasoner' : config.llm.model }, usage.inputTokens + usage.outputTokens)
+
+    // ★ 降级路径也支持 function calling
+    if (toolCalls && toolCalls.length > 0) {
+      const replyText = await this._handleToolCalls(
+        history, sysContent, toolCalls, ctx.userId,
+        onDelta, onReasoning, deepThinking, signal,
+      )
+      return { text: replyText || text, reasoning }
+    }
+
     return { text, reasoning }
+  }
+
+  /**
+   * _handleToolCalls() — 执行工具调用并生成最终回复
+   * 最多 2 轮（第 1 轮调工具，第 2 轮基于结果生成回复）
+   */
+  private async _handleToolCalls(
+    messages: ChatMessage[],
+    sysContent: string,
+    toolCalls: Array<{ id: string; name: string; args: string }>,
+    userId: string,
+    onDelta: (text: string) => void,
+    onReasoning?: (text: string) => void,
+    deepThinking?: boolean,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    addStep('info', { event: 'function_calling', count: toolCalls.length })
+
+    // 添加 assistant 消息（含 tool_calls）
+    const assistantMsg: ChatMessage = {
+      role: 'assistant',
+      content: null,
+      tool_calls: toolCalls.map(tc => ({
+        id: tc.id,
+        type: 'function' as const,
+        function: { name: tc.name, arguments: tc.args },
+      })),
+    }
+    messages.push(assistantMsg)
+
+    // 执行每个工具
+    for (const tc of toolCalls) {
+      let args: Record<string, unknown> = {}
+      try { args = JSON.parse(tc.args) } catch { /* */ }
+      const toolResult = await dispatchToolCall(tc.name, args, userId)
+      messages.push({
+        role: 'tool',
+        content: toolResult,
+        tool_call_id: tc.id,
+      })
+      // 工具执行过程不推给前端（太技术），只记日志
+      addStep('tool_result', { tool: tc.name, fileName: (args as any).fileName, resultLen: toolResult.length })
+    }
+
+    // 再调 LLM 生成基于工具结果的最终回复
+    const fullMessages = [{ role: 'system' as const, content: sysContent }, ...messages]
+    let fullText = ''
+    const { text, toolCalls: moreCalls } = await chatStream(
+      fullMessages,
+      {
+        onDelta: (d) => { fullText += d; onDelta(d) },
+        onReasoning,
+        onUsage: () => {},
+      },
+      { maxTokens: 8192, temperature: 0.7, signal, deepThinking },
+    )
+
+    // 如果还有工具调用（极少），再做一轮
+    if (moreCalls && moreCalls.length > 0) {
+      const assistantMsg2: ChatMessage = {
+        role: 'assistant',
+        content: null,
+        tool_calls: moreCalls.map(tc => ({
+          id: tc.id, type: 'function' as const,
+          function: { name: tc.name, arguments: tc.args },
+        })),
+      }
+      messages.push(assistantMsg2)
+      for (const tc of moreCalls) {
+        let args: Record<string, unknown> = {}
+        try { args = JSON.parse(tc.args) } catch { /* */ }
+        const toolResult = await dispatchToolCall(tc.name, args, userId)
+        messages.push({ role: 'tool', content: toolResult, tool_call_id: tc.id })
+      }
+      fullText = ''
+      const final = await chatStream(
+        [{ role: 'system' as const, content: sysContent }, ...messages],
+        { onDelta: (d) => { fullText += d; onDelta(d) } },
+        { maxTokens: 8192, temperature: 0.7, signal, deepThinking },
+      )
+      return final.text
+    }
+
+    return text
   }
 }
 
@@ -488,9 +595,9 @@ function templateReply(profile: Profile): string {
     return '了解了你的兴趣～想再了解下，你是喜欢一个人安静地做这些，还是更享受有人一起？'
   }
   if (!profile.goal) {
-    return '你的画像挺清晰了。这次想找个什么样的搭子呢？比如一起做什么、什么节奏？'
+    return '你的画像挺清晰了。有什么特别想聊的或者需要的吗？'
   }
-  return '我觉得对你的了解差不多了，可以点"开始匹配"帮你找搭子，也可以继续聊～'
+  return '我对你的了解差不多了，随时可以开始匹配帮你找到合适的朋友，也可以继续聊～'
 }
 
 // 文件路径：server/src/agents/profileAgent.ts → hasPatchContent()

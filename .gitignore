@@ -14,3 +14,32 @@ scripts-test/
 seed.ts
 aiDispatchTest.ts
 test.ts
+
+# MD 文档（本地笔记不入库）
+*.md
+!README.md
+
+# 临时生成文件
+_arch_diagram.png
+_dump_manual.py
+_gen_all_docs.py
+_manual_struct.txt
+_radar_chart.png
+_read_templates.py
+content.txt
+
+# 测试/脚本不入库
+server/src/scripts/
+
+# 本地数据库
+data/
+
+# Redis 二进制不提交（根目录 ./redis/）
+/redis/
+
+# WebSocket 废弃代码
+server/websocket/
+
+# 工具镜像
+web/src/utils/officeExtract.js
+web/src/utils/ocr.js

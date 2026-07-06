@@ -31,20 +31,40 @@ export const profileRouter = Router()  // 创建路由器
 profileRouter.get('/', requireAuth, (req, res) => {
   const profile = loadProfile(req.user!.id)  // 从 DB 加载画像
   if (!profile) {
-    // 没画像（新用户没聊过天）
     res.json({
       profile: null,
       confidence: 0,
       profileText: '',
+      mbti: null,
       message: '还没有画像，去聊聊吧',
     })
     return
   }
-  // 有画像 → 返回画像 + 置信度 + 文本版（前端可展示）
+  // MBTI
+  let mbti: { type: string; confidence: number; partial: string | null } | null = null
+  try {
+    const { getMbtiProfile } = require('../integrations/mbtiProfileAdapter.js')
+    const mp = getMbtiProfile(req.user!.id)
+    if (mp) {
+      const dims = mp.dimensions || []
+      const ei = dims.find((d: any) => d.dimension === 'EI')
+      const sn = dims.find((d: any) => d.dimension === 'SN')
+      const tf = dims.find((d: any) => d.dimension === 'TF')
+      const jp = dims.find((d: any) => d.dimension === 'JP')
+      const char = (dim: any) => (dim && dim.confidence >= 0.5) ? dim.pole : '_'
+      const partial = `${char(ei)}${char(sn)}${char(tf)}${char(jp)}`
+      mbti = {
+        type: mp.type !== 'UNKNOWN' ? mp.type : partial.replace(/_/g, ''),
+        confidence: mp.confidence,
+        partial,
+      }
+    }
+  } catch { /* ignore */ }
   res.json({
-    profile,                           // 完整画像对象（兴趣/风格/目标/约束...）
-    confidence: profile.confidence,    // 置信度（0-1，越高越了解用户）
-    profileText: profileToText(profile), // 画像转纯文本（给用户看的人类可读版）
+    profile,
+    confidence: profile.confidence,
+    profileText: profileToText(profile),
+    mbti,
   })
 })
 
@@ -94,29 +114,48 @@ profileRouter.get('/:userId/public', requireAuth, (req, res) => {
   const profile = loadProfile(targetUserId)
 
   // ③ MBTI 画像（从 mbtiProfileAdapter 拿）
-  let mbti: { type: string; confidence: number } | null = null
+  let mbti: { type: string; confidence: number; partial: string | null } | null = null
   try {
     const { getMbtiProfile } = require('../integrations/mbtiProfileAdapter.js')
     const mbtiProfile = getMbtiProfile(targetUserId)
-    if (mbtiProfile && mbtiProfile.type !== 'UNKNOWN') {
-      mbti = { type: mbtiProfile.type, confidence: mbtiProfile.confidence }
+    if (mbtiProfile) {
+      // 已测到的字母逐个显示，未测的用 _ 占位
+      const dims = mbtiProfile.dimensions || []
+      const ei = dims.find((d: any) => d.dimension === 'EI')
+      const sn = dims.find((d: any) => d.dimension === 'SN')
+      const tf = dims.find((d: any) => d.dimension === 'TF')
+      const jp = dims.find((d: any) => d.dimension === 'JP')
+      const char = (dim: any) => (dim && dim.confidence >= 0.5) ? dim.pole : '_'
+      const partial = `${char(ei)}${char(sn)}${char(tf)}${char(jp)}`
+      mbti = {
+        type: mbtiProfile.type !== 'UNKNOWN' ? mbtiProfile.type : partial.replace(/_/g, ''),
+        confidence: mbtiProfile.confidence,
+        partial,  // 如 "IN__" — 已测到的字母显示，未测的用 _
+      }
     }
   } catch {
     // mbtiProfileAdapter 未加载 → 跳过
   }
 
   // ④ 用户自定义主页信息（从 user_home 表读，无则用默认）
-  let homeCustom: { bio: string; avatarColor: string; tags: string[] } | null = null
+  let homeCustom: { bio: string; avatarColor: string; avatarUrl?: string; tags: string[]; likes: number; city?: string; genderPref?: string; ageRange?: any } | null = null
   try {
     const homeRow = db.prepare(`
-      SELECT bio, avatar_color, tags FROM user_home WHERE user_id = ?
+      SELECT display_name, bio, avatar_color, avatar_url, tags, likes, city, gender_pref, age_range FROM user_home WHERE user_id = ?
     `).get(targetUserId) as
-      { bio: string | null; avatar_color: string | null; tags: string | null } | undefined
+      { display_name: string | null; bio: string | null; avatar_color: string | null; avatar_url: string | null; tags: string | null; likes: number | null; city: string | null; gender_pref: string | null; age_range: string | null } | undefined
     if (homeRow) {
+      let ageRange: any = null
+      if (homeRow.age_range) { try { ageRange = JSON.parse(homeRow.age_range) } catch {} }
       homeCustom = {
         bio: homeRow.bio || '',
         avatarColor: homeRow.avatar_color || '',
+        avatarUrl: homeRow.avatar_url || '',
         tags: homeRow.tags ? JSON.parse(homeRow.tags) : [],
+        likes: homeRow.likes || 0,
+        city: homeRow.city || '',
+        genderPref: homeRow.gender_pref || '',
+        ageRange,
       }
     }
   } catch {
@@ -130,8 +169,9 @@ profileRouter.get('/:userId/public', requireAuth, (req, res) => {
       displayName: userRow.display_name,
       createdAt: userRow.created_at,
     },
+    // 只暴露公开画像，不暴露证据链、隐私原始数据
     profile: profile ? {
-      interests: profile.interests.map(i => ({ name: i.name, confidence: i.confidence })),
+      interests: profile.interests?.map(i => ({ name: i.name, confidence: i.confidence })) || [],
       socialStyle: profile.socialStyle,
       schedule: profile.schedule,
       goal: profile.goal,
@@ -143,48 +183,74 @@ profileRouter.get('/:userId/public', requireAuth, (req, res) => {
 })
 
 // ════════════════════════════════════════════════════════════
-//  【用户主页】PUT /home — 设定自己的主页（bio / 头像色 / 标签）
+//  【用户主页】PUT /home — 设定自己的主页
+//   字段：displayName / bio / avatarColor / tags
 // ════════════════════════════════════════════════════════════
-//   场景：用户点自己头像 → 编辑主页
-//   字段：bio（一句话简介）、avatarColor（头像底色）、tags（自定义标签数组）
 profileRouter.put('/home', requireAuth, (req, res) => {
-  const { bio, avatarColor, tags } = req.body || {}
+  const { displayName, bio, avatarColor, tags, city, genderPref, ageRange } = req.body || {}
   const userId = req.user!.id
   const tenantId = req.user!.tenantId
   const db = getDB()
 
-  // 建表（首次使用时自动建）
   db.prepare(`
     CREATE TABLE IF NOT EXISTS user_home (
       user_id TEXT PRIMARY KEY,
       tenant_id TEXT NOT NULL,
+      display_name TEXT,
       bio TEXT,
       avatar_color TEXT,
+      avatar_url TEXT,
       tags TEXT,
+      city TEXT,
+      gender_pref TEXT,
+      age_range TEXT,
       updated_at INTEGER
     )
   `).run()
 
-  // upsert
+  try { db.prepare('ALTER TABLE user_home ADD COLUMN display_name TEXT').run() } catch {}
+  try { db.prepare('ALTER TABLE user_home ADD COLUMN city TEXT').run() } catch {}
+  try { db.prepare('ALTER TABLE user_home ADD COLUMN gender_pref TEXT').run() } catch {}
+  try { db.prepare('ALTER TABLE user_home ADD COLUMN age_range TEXT').run() } catch {}
+
   const exists = db.prepare('SELECT 1 FROM user_home WHERE user_id = ?').get(userId)
   const tagsJson = Array.isArray(tags) ? JSON.stringify(tags.slice(0, 10)) : '[]'
+  const dn = (displayName && typeof displayName === 'string') ? displayName.trim().slice(0, 24) : ''
+  const b = (bio && typeof bio === 'string') ? bio.trim().slice(0, 80) : ''
+  const avc = (avatarColor && typeof avatarColor === 'string') ? avatarColor : ''
+  const c = (city && typeof city === 'string') ? city.trim().slice(0, 32) : ''
+  const gp = (genderPref && typeof genderPref === 'string') ? genderPref : ''
+  const ar = ageRange ? JSON.stringify(ageRange) : ''
   const now = Date.now()
 
   if (exists) {
-    db.prepare(`
-      UPDATE user_home SET bio = ?, avatar_color = ?, tags = ?, updated_at = ?
-      WHERE user_id = ?
-    `).run(bio || '', avatarColor || '', tagsJson, now, userId)
+    const sets: string[] = []
+    const vals: any[] = []
+    if (dn !== undefined) { sets.push('display_name = ?'); vals.push(dn) }
+    if (bio !== undefined) { sets.push('bio = ?'); vals.push(b) }
+    if (avc !== undefined) { sets.push('avatar_color = ?'); vals.push(avc) }
+    sets.push('tags = ?'); vals.push(tagsJson)
+    sets.push('city = ?'); vals.push(c)
+    sets.push('gender_pref = ?'); vals.push(gp)
+    sets.push('age_range = ?'); vals.push(ar)
+    sets.push('updated_at = ?'); vals.push(now)
+    vals.push(userId)
+    db.prepare(`UPDATE user_home SET ${sets.join(', ')} WHERE user_id = ?`).run(...vals)
   } else {
     db.prepare(`
-      INSERT INTO user_home (user_id, tenant_id, bio, avatar_color, tags, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(userId, tenantId, bio || '', avatarColor || '', tagsJson, now)
+      INSERT INTO user_home (user_id, tenant_id, display_name, bio, avatar_color, tags, city, gender_pref, age_range, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(userId, tenantId, dn, b, avc, tagsJson, c, gp, ar, now)
+  }
+
+  // 同步 displayName 到 users 表（侧栏/DM/AI 对话取这里）
+  if (dn) {
+    db.prepare('UPDATE users SET display_name = ? WHERE id = ?').run(dn, userId)
   }
 
   res.json({
     ok: true,
-    home: { bio: bio || '', avatarColor: avatarColor || '', tags: Array.isArray(tags) ? tags.slice(0, 10) : [] },
+    home: { displayName: dn, bio: b, avatarColor: avc, tags: Array.isArray(tags) ? tags.slice(0, 10) : [], city: c, genderPref: gp, ageRange },
   })
 })
 
@@ -197,23 +263,44 @@ profileRouter.get('/home/me', requireAuth, (req, res) => {
     CREATE TABLE IF NOT EXISTS user_home (
       user_id TEXT PRIMARY KEY,
       tenant_id TEXT NOT NULL,
+      display_name TEXT,
       bio TEXT,
       avatar_color TEXT,
+      avatar_url TEXT,
       tags TEXT,
+      city TEXT,
+      gender_pref TEXT,
+      age_range TEXT,
       updated_at INTEGER
     )
   `).run()
 
+  try { db.prepare('ALTER TABLE user_home ADD COLUMN display_name TEXT').run() } catch {}
+  try { db.prepare('ALTER TABLE user_home ADD COLUMN avatar_url TEXT').run() } catch {}
+  try { db.prepare('ALTER TABLE user_home ADD COLUMN city TEXT').run() } catch {}
+  try { db.prepare('ALTER TABLE user_home ADD COLUMN gender_pref TEXT').run() } catch {}
+  try { db.prepare('ALTER TABLE user_home ADD COLUMN age_range TEXT').run() } catch {}
+
   const row = db.prepare(`
-    SELECT bio, avatar_color, tags FROM user_home WHERE user_id = ?
+    SELECT display_name, bio, avatar_color, avatar_url, tags, city, gender_pref, age_range FROM user_home WHERE user_id = ?
   `).get(req.user!.id) as
-    { bio: string | null; avatar_color: string | null; tags: string | null } | undefined
+    { display_name: string | null; bio: string | null; avatar_color: string | null; avatar_url: string | null; tags: string | null; city: string | null; gender_pref: string | null; age_range: string | null } | undefined
+
+  let ageRange: any = null
+  if (row?.age_range) {
+    try { ageRange = JSON.parse(row.age_range) } catch {}
+  }
 
   res.json({
     home: row ? {
+      displayName: row.display_name || '',
       bio: row.bio || '',
       avatarColor: row.avatar_color || '',
+      avatarUrl: row.avatar_url || '',
       tags: row.tags ? JSON.parse(row.tags) : [],
-    } : { bio: '', avatarColor: '', tags: [] },
+      city: row.city || '',
+      genderPref: row.gender_pref || '',
+      ageRange,
+    } : { displayName: '', bio: '', avatarColor: '', avatarUrl: '', tags: [], city: '', genderPref: '', ageRange: null },
   })
 })

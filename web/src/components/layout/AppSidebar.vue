@@ -60,16 +60,20 @@
         <span v-if="chat.sessions.length" class="dock-badge">{{ chat.sessions.length }}</span>
       </button>
 
-      <!-- 主题切换（暂留暗色，预留切换钩子）-->
+      <!-- 主题切换 -->
       <button class="dock-btn" title="主题" @click="toggleTheme">
-        <AppIcon name="moon" :size="18" />
+        <AppIcon :name="themeIcon" :size="18" />
         <span class="dock-label">主题</span>
       </button>
 
       <!-- 用户头像/退出 -->
-      <button class="dock-btn" title="账户" @click="userMenuOpen = !userMenuOpen">
-        <div class="avatar-mini">{{ initial }}</div>
+      <button class="dock-btn" title="我的主页" @click="goToMyHome">
+        <img v-if="myAvatar" :src="myAvatar" class="avatar-mini-img" alt="" />
+        <div v-else class="avatar-mini" :style="{ background: auth.avatarColor }">{{ initial }}</div>
         <span class="dock-label">我</span>
+      </button>
+      <button class="dock-btn dock-btn-tiny" title="更多" @click="userMenuOpen = !userMenuOpen">
+        <span style="font-size:14px;line-height:1;letter-spacing:-2px;">···</span>
       </button>
     </div>
 
@@ -150,7 +154,8 @@
     <transition name="fade">
       <div v-if="userMenuOpen" class="user-menu" @click.stop>
         <div class="user-menu-header">
-          <div class="avatar">{{ initial }}</div>
+          <img v-if="myAvatar" :src="myAvatar" class="user-menu-avatar" alt="" />
+          <div v-else class="avatar" :style="{ background: auth.avatarColor }"> {{ initial }}</div>
           <div class="user-info">
             <div class="user-name">{{ auth.displayName }}</div>
             <div class="user-id">@{{ auth.user?.username }}</div>
@@ -159,6 +164,10 @@
         <button class="user-menu-item danger" @click="onLogout">
           <AppIcon name="logout" :size="14" />
           <span>退出登录</span>
+        </button>
+        <button class="user-menu-item" @click="goToMyHome">
+          <AppIcon name="user" :size="14" />
+          <span>查看主页</span>
         </button>
       </div>
     </transition>
@@ -183,9 +192,23 @@ const mobileOpen = ref(false)
 const convPanelOpen = ref(false)
 const userMenuOpen = ref(false)
 const searchQuery = ref('')
+const myAvatar = computed(() => auth.avatarUrl)
+
+// ─── 跳转到自己主页 ───
+function goToMyHome() {
+  userMenuOpen.value = false
+  router.push('/home/me')
+}
 
 // ─── 计算属性 ───
 const initial = computed(() => (auth.displayName || 'U').charAt(0).toUpperCase())
+const themeIcon = computed(() => {
+  const theme = document.documentElement.getAttribute('data-theme')
+  if (theme === 'light') return 'sun'
+  if (theme === 'blue') return 'sparkles'
+  if (theme === 'orange') return 'zap'
+  return 'moon'
+})
 const pct = computed(() => Math.round(chat.profileConfidence * 100))
 const confClass = computed(() => {
   if (pct.value >= 65) return 'high'
@@ -207,8 +230,22 @@ const filteredSessions = computed(() => {
 
 // ─── 事件处理 ───
 function toggleTheme() {
-  // 预留主题切换钩子（当前固定暗色）
-  document.documentElement.toggleAttribute('data-theme-light', false)
+  const html = document.documentElement
+  const current = html.getAttribute('data-theme')
+  // 循环: light(默认) → blue → orange → dark → light
+  if (!current || current === 'dark') {
+    html.setAttribute('data-theme', 'light')
+    localStorage.setItem('theme', 'light')
+  } else if (current === 'light') {
+    html.setAttribute('data-theme', 'blue')
+    localStorage.setItem('theme', 'blue')
+  } else if (current === 'blue') {
+    html.setAttribute('data-theme', 'orange')
+    localStorage.setItem('theme', 'orange')
+  } else {
+    html.removeAttribute('data-theme')
+    localStorage.setItem('theme', 'dark')
+  }
 }
 
 async function onNewConversation() {
@@ -246,7 +283,7 @@ async function onLogout() {
 // 点击外部关闭用户菜单
 function onDocClick(e) {
   const menu = document.querySelector('.user-menu')
-  const btn = document.querySelector('.dock-btn:last-child')
+  const btn = document.querySelector('.dock-btn-tiny')
   if (menu && !menu.contains(e.target) && !btn?.contains(e.target)) {
     userMenuOpen.value = false
   }
@@ -256,7 +293,8 @@ onMounted(() => {
   chat.loadStatus()
   chat.loadSessions()
   dm.loadRooms()
-  setInterval(() => dm.loadRooms(), 30_000)
+  dm.startNotify()          // 全局 DM 通知 SSE（实时收消息）
+  setInterval(() => dm.loadRooms(), 60_000)  // 兜底，SSE 断了也能恢复
   document.addEventListener('click', onDocClick)
 })
 
@@ -292,10 +330,8 @@ onBeforeUnmount(() => {
 .logo-mark {
   width: 36px; height: 36px;
   display: flex; align-items: center; justify-content: center;
-  background: linear-gradient(135deg, var(--accent), var(--accent-hover));
   border-radius: var(--radius);
-  color: white;
-  box-shadow: var(--shadow-glow);
+  color: var(--accent-primary, #5b8def);
 }
 
 /* ─── 顶部导航图标列 ─── */
@@ -384,6 +420,17 @@ onBeforeUnmount(() => {
   display: flex; align-items: center; justify-content: center;
   font-weight: 600;
   font-size: 11px;
+}
+.avatar-mini-img {
+  width: 24px; height: 24px;
+  border-radius: var(--radius-full);
+  object-fit: cover;
+  border: 1px solid var(--border);
+}
+.dock-btn-tiny {
+  width: 40px; height: 32px;
+  margin: 0 auto;
+  color: var(--text3);
 }
 
 /* ═══ 对话管理滑出面板（DeepSeek-Super 浮动玻璃卡）═══ */
@@ -612,6 +659,12 @@ onBeforeUnmount(() => {
   font-size: var(--fs-sm);
 }
 .user-info { flex: 1; min-width: 0; }
+.user-menu-avatar {
+  width: 32px; height: 32px;
+  border-radius: var(--radius-full);
+  object-fit: cover;
+  border: 1px solid var(--border);
+}
 .user-name {
   font-size: var(--fs-sm);
   font-weight: 500;

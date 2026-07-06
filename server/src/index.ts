@@ -35,6 +35,8 @@ import { privacyRouter } from './routes/privacy.js' // 隐私路由
 import { healthRouter } from './routes/health.js'   // 健康检查路由
 import { dmRouter } from './routes/dm.js'           // 私信路由
 import { testRouter } from './routes/test.js'       // 测试路由（AI 派发 + 日志 + 报告）
+import { avatarRouter } from './routes/avatar.js'   // 头像上传路由
+import { likesRouter } from './routes/likes.js'     // 点赞路由
 // ▼▼▼ 【增强系统新增】（可选，未配 REDIS_URL 时自动降级到内存模式）▼▼▼
 import { initEnhancedSystem } from './integrations/index.js'
 import { saveMemoryToRedis, stopPeriodicSave } from './redis/index.js'
@@ -63,10 +65,10 @@ app.use(cors({
   methods: ['GET', 'POST', 'DELETE', 'PATCH'], // 允许的 HTTP 方法
 }))
 
-// JSON 解析：把 req.body 从字符串变成 JS 对象（限 256kb 防大 payload 攻击）
-app.use(express.json({ limit: '256kb' }))
+// JSON 解析：把 req.body 从字符串变成 JS 对象（限 50MB，支持图片 dataURL 上传）
+app.use(express.json({ limit: '50mb' }))
 // URL 编码解析（表单提交用，这里 extended:false 用简单解析）
-app.use(express.urlencoded({ extended: false, limit: '256kb' }))
+app.use(express.urlencoded({ extended: false, limit: '50mb' }))
 // Cookie 解析：把 req.headers.cookie 解析到 req.cookies 对象
 app.use(cookieParser())
 
@@ -88,6 +90,8 @@ app.use('/api/match', matchRouter)    // /api/match/run, /api/match/history ...
 app.use('/api/privacy', privacyRouter) // /api/privacy/export, /api/privacy/account
 app.use('/api/dm', dmRouter)          // /api/dm/rooms ...
 app.use('/api/test', testRouter)      // /api/test/run, /api/test/trace, /api/test/report
+app.use('/api/avatar', avatarRouter)  // /api/avatar
+app.use('/api/likes', likesRouter)    // /api/likes/:userId
 
 // ─── 404 处理（所有未匹配的路由走到这）───
 app.use((_req, res) => {

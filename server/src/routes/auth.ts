@@ -29,6 +29,7 @@ import {
   registerUser, loginUser, signToken, authCookieName, type AuthUser,
 } from '../services/auth.js'      // 认证服务（注册/登录/签 token）
 import { requireAuth } from '../middleware/auth.js'  // 鉴权中间件
+import { getDB } from '../db/index.js'                  // DB 访问（读 user_home）
 
 // 文件路径：server/src/routes/auth.ts → authRouter
 export const authRouter = Router()  // 创建路由器
@@ -96,8 +97,23 @@ authRouter.post('/logout', (_req, res) => {
 })
 
 // GET /me — 查当前登录用户（前端刷新页面时调，恢复登录状态）
+//   同时从 user_home 取自定义显示名 + 头像 URL，确保侧栏/私信/AI 对话全部同步
 authRouter.get('/me', requireAuth, (req, res) => {
-  // requireAuth 中间件已验证 cookie → req.user 有值
-  res.json({ user: toPublicUser(req.user!) })
-  //                                ↑ ! 非空断言：requireAuth 保证 req.user 不是 undefined
+  const user = toPublicUser(req.user!)
+  // 查 user_home 表：覆盖 displayName + 补充 avatarUrl
+  try {
+    const db = getDB()
+    const homeRow = db.prepare(
+      'SELECT display_name, avatar_url, avatar_color FROM user_home WHERE user_id = ?'
+    ).get(req.user!.id) as { display_name: string | null; avatar_url: string | null; avatar_color: string | null } | undefined
+    if (homeRow) {
+      if (homeRow.display_name) user.displayName = homeRow.display_name
+      ;(user as any).avatarUrl = homeRow.avatar_url || ''
+      ;(user as any).avatarColor = homeRow.avatar_color || '#6366f1'
+    } else {
+      ;(user as any).avatarUrl = ''
+      ;(user as any).avatarColor = '#6366f1'
+    }
+  } catch { /* user_home 表可能不存在 */ }
+  res.json({ user })
 })

@@ -33,18 +33,40 @@
   <!-- DeepSeek-Super 聊天模式：AI 左对齐+左侧 accent 竖线+无气泡+markdown；用户右对齐+灰泡 -->
   <div class="msg" :class="role === 'user' ? 'user' : 'ai'">
     <div class="body" :class="{ streaming: streaming && role !== 'user' }">
-      <!-- 用户：纯文本灰泡 + 可选图片网格（不渲染 markdown，防 XSS） -->
+      <!-- 用户：纯文本灰泡 + 文件卡片 + 可选图片网格（不渲染 markdown，防 XSS） -->
       <template v-if="role === 'user'">
-        <div v-if="images && images.length" class="user-images">
-          <img
-            v-for="(src, i) in images"
-            :key="i"
-            :src="src"
-            class="user-image"
-            @click="$emit('preview', src)"
-          />
+        <div class="user-content">
+          <div class="user-bubbles">
+            <!-- 文件卡片（在图片和用户气泡上面，独立文件气泡）-->
+            <div v-if="files && files.length" class="user-files">
+              <div class="file-card" v-for="(f, i) in files" :key="i">
+                <div class="file-icon-box">
+                  <span class="file-ext">{{ fileExt(f.name) }}</span>
+                </div>
+                <div class="file-info">
+                  <span class="file-name">{{ f.name }}</span>
+                  <span class="file-size">{{ formatSize(f.size) }}</span>
+                </div>
+              </div>
+            </div>
+            <div v-if="images && images.length" class="user-images" :class="'img-count-' + Math.min(images.length, 4)">
+              <img
+                v-for="(src, i) in images"
+                :key="i"
+                :src="src"
+                class="user-image"
+                loading="eager"
+                decoding="async"
+                @click="$emit('preview', src)"
+                @error="onImgError($event)"
+              />
+            </div>
+            <div v-if="text" class="bubble">{{ text }}</div>
+            <!-- 兜底：text 为空且无图片/文件时，不显示气泡；有图片/文件时图片/文件卡片本身即是气泡 -->
+          </div>
+          <img v-if="userAvatar" :src="userAvatar" class="user-avatar" alt="" />
+          <div v-else class="user-avatar user-avatar-initial" :style="{ background: avatarColor || '#6366f1' }">{{ userInitial?.charAt(0) || 'U' }}</div>
         </div>
-        <div v-if="text" class="bubble">{{ text }}</div>
       </template>
 
       <!-- AI：先思考框（如果有 reasoning），再正文 -->
@@ -84,6 +106,8 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { marked } from 'marked'
+import hljs from 'highlight.js'
+import 'highlight.js/styles/github-dark-dimmed.css'
 
 // defineProps：声明组件接收的属性
 const props = defineProps({
@@ -94,10 +118,37 @@ const props = defineProps({
   createdAt: { type: Number, default: 0 },       // 创建时间戳
   userInitial: { type: String, default: 'U' },   // 用户头像首字母
   images: { type: Array, default: () => [] },    // 用户消息附带的图片（dataURL 数组）
+  files: { type: Array, default: () => [] },      // 用户消息附带的文件（{name,size}）
+  userAvatar: { type: String, default: '' },      // 用户头像 URL
+  avatarColor: { type: String, default: '#6366f1' }, // 用户头像背景色
 })
+
+// 文件大小格式化
+function formatSize(bytes) {
+  if (!bytes || bytes < 1024) return (bytes || 0) + 'B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + 'KB'
+  return (bytes / (1024 * 1024)).toFixed(1) + 'MB'
+}
+
+// 文件扩展名（大写，最多 4 字符）
+function fileExt(name) {
+  if (!name) return 'FILE'
+  const dot = name.lastIndexOf('.')
+  if (dot < 0 || dot === name.length - 1) return 'FILE'
+  return name.slice(dot + 1).toUpperCase().slice(0, 4)
+}
 
 // 点击用户图片时抛 preview 事件，父组件可弹出大图预览
 defineEmits(['preview'])
+
+/** 图片加载失败时显示占位底色 */
+function onImgError(e) {
+  const img = e.target
+  if (img) {
+    img.style.background = 'var(--bg-hover, #333)'
+    img.style.minHeight = '72px'
+  }
+}
 
 // 思考框默认状态：
 //   ★ 修复 bug：之前默认 thinkingOpen=true 导致离开页面再回来所有思考框都展开
@@ -111,10 +162,21 @@ watch(() => props.streaming, (now, prev) => {
   if (prev && !now) thinkingOpen.value = false
 })
 
-// marked 配置：breaks=true 换行转 <br>，gfm=true 支持 GitHub markdown
+// marked 配置：breaks=true 换行转 <br>，gfm=true 支持 GitHub markdown，highlight 代码高亮
 marked.setOptions({
   breaks: true,
   gfm: true,
+  highlight: function (code, lang) {
+    if (lang && hljs.getLanguage(lang)) {
+      try {
+        return hljs.highlight(code, { language: lang }).value
+      } catch {}
+    }
+    try {
+      return hljs.highlightAuto(code).value
+    } catch {}
+    return code
+  },
 })
 
 /**
@@ -235,6 +297,31 @@ const time = computed(() => {
 .msg.user {
   margin-left: auto;
   justify-content: flex-end;
+}
+.user-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+}
+.user-bubbles {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 0;
+}
+.user-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.user-avatar-initial {
+  display: flex; align-items: center; justify-content: center;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
 }
 .body {
   position: relative;
@@ -381,26 +468,36 @@ const time = computed(() => {
   margin: 2px 0;
 }
 :deep(.markdown-body code) {
-  background: var(--bg-muted, rgba(0,0,0,0.05));
-  padding: 1px 5px;
+  background: var(--bg-muted, rgba(0,0,0,0.06));
+  color: var(--accent-primary, #e06c75);
+  padding: 2px 6px;
   border-radius: 4px;
-  font-family: 'SF Mono', Consolas, monospace;
-  font-size: 13px;
+  font-family: 'SF Mono', Consolas, 'Fira Code', monospace;
+  font-size: 12.5px;
 }
 :deep(.markdown-body pre) {
   background: var(--bg-code, #1e1e1e);
   color: #e6e6e6;
-  padding: 10px 12px;
-  border-radius: 6px;
+  padding: 14px 16px;
+  border-radius: 8px;
   overflow-x: auto;
-  margin: 8px 0;
+  margin: 10px 0;
   font-size: 13px;
-  line-height: 1.5;
+  line-height: 1.6;
+  border: 1px solid var(--border-subtle, rgba(255,255,255,0.06));
 }
 :deep(.markdown-body pre code) {
   background: transparent;
   padding: 0;
   color: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+/* 代码块内 hljs 高亮保持 transparent 背景 */
+:deep(.markdown-body pre code.hljs),
+:deep(.markdown-body pre code .hljs) {
+  background: transparent;
+  padding: 0;
 }
 :deep(.markdown-body blockquote) {
   margin: 8px 0;
@@ -431,25 +528,95 @@ const time = computed(() => {
   padding: 4px 8px;
 }
 
-/* ─── 用户图片网格（发图时展示）─── */
-.user-images {
+/* ─── 用户文件气泡（独立卡片，在用户消息上方）─── */
+.user-files {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+  margin-left: auto;
+  max-width: 260px;
+  width: 100%;
+}
+.file-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--bg-elevated, #f5f5f5);
+  border: 1px solid var(--border-subtle, #e5e5e5);
+  cursor: default;
+  transition: background var(--dur-fast);
+}
+.file-card:hover {
+  background: var(--bg-hover, #eee);
+}
+.file-icon-box {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: var(--accent, #4a6cf7);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.file-ext {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  line-height: 1;
+}
+.file-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.file-info .file-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-info .file-size {
+  font-size: 11px;
+  color: var(--text-tertiary, #999);
+}
+
+/* ─── 用户图片网格 ─── 
+   1-3 张：单行，最多 3 栏
+   4 张：  2×2 网格
+   5+ 张：3 栏自动换行 */
+.user-images {
+  display: grid;
   gap: 6px;
   margin-bottom: 6px;
-  max-width: 280px;
-  margin-left: auto;        /* 用户消息右对齐 */
+  margin-left: auto;
+  width: fit-content;
 }
+.user-images.img-count-1 { grid-template-columns: 140px; }
+.user-images.img-count-2 { grid-template-columns: repeat(2, 100px); }
+.user-images.img-count-3 { grid-template-columns: repeat(3, 80px); }
+.user-images.img-count-4 { grid-template-columns: repeat(2, 110px); }
+
 .user-image {
-  width: 96px;
-  height: 96px;
+  width: 100%;
+  aspect-ratio: 1 / 1;
   object-fit: cover;
   border-radius: var(--radius-md, 8px);
   border: 1px solid var(--border-subtle, #e5e5e5);
   cursor: pointer;
   transition: transform var(--dur-fast, 0.15s) ease;
+  background: var(--bg-hover, #333);
+  display: block;
 }
-.user-image:hover { transform: scale(1.03); }
+.user-image:hover { transform: scale(1.04); }
 
 /* ─── AI 生成的 Pollinations 图片网格 ───
    按张数自适应排版：1张大图 / 2张并排 / 3张三栏 / 4+两行三栏

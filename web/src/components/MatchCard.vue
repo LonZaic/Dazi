@@ -8,9 +8,9 @@
 
       <!-- 头像 + 基本信息 -->
       <div class="who">
-        <div class="avatar">{{ initial }}</div>
+        <div class="avatar clickable" @click="goToUserHome" :title="`查看 ${candidate.displayName} 的主页`">{{ initial }}</div>
         <div class="who-info">
-          <div class="who-name">
+          <div class="who-name clickable" @click="goToUserHome" :title="`查看 ${candidate.displayName} 的主页`">
             {{ candidate.displayName }}
             <!-- ═══ MBTI 类型徽章（DeepSeek-Super 风格玻璃质感）═══ -->
             <span
@@ -192,8 +192,11 @@
 
 <script setup>
 import { computed } from 'vue'
+import { useRouter } from 'vue-router'
 import AppIcon from './common/AppIcon.vue'
 import RadarChart from './RadarChart.vue'
+
+const router = useRouter()
 
 const props = defineProps({
   candidate: { type: Object, required: true },
@@ -205,6 +208,10 @@ const props = defineProps({
 })
 
 defineEmits(['icebreaker', 'dm'])
+
+function goToUserHome() {
+  if (props.candidate.userId) router.push(`/home/${props.candidate.userId}`)
+}
 
 const initial = computed(() => (props.candidate.displayName || 'U').charAt(0).toUpperCase())
 const scorePct = computed(() => Math.round(props.candidate.score * 100))
@@ -352,6 +359,8 @@ async function copyText(t) {
   font-weight: 600;
   flex-shrink: 0;
 }
+.avatar.clickable { cursor: pointer; transition: transform .15s; }
+.avatar.clickable:hover { transform: scale(1.08); }
 .who-name {
   font-size: var(--fs-md);
   font-weight: 600;
@@ -361,6 +370,8 @@ async function copyText(t) {
   gap: var(--space-2);
   flex-wrap: wrap;
 }
+.who-name.clickable { cursor: pointer; }
+.who-name.clickable:hover { color: var(--accent-primary); }
 .who-score { display: flex; align-items: baseline; gap: var(--space-2); margin-top: 2px; flex-wrap: wrap; }
 .score-label { font-size: var(--fs-xs); color: var(--text-tertiary); }
 .score-val { font-size: var(--fs-lg); font-weight: 700; }

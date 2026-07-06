@@ -23,6 +23,14 @@ html, body, #app {
 }
 *::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.18); }
 
+/* ─── 浅色模式滚动条 ─── */
+[data-theme="light"] *::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.12);
+}
+[data-theme="light"] *::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.22);
+}
+
 .app-root {
   display: flex;
   height: 100vh;

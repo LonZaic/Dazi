@@ -97,8 +97,10 @@ import { config } from '../config/index.js'
 // ─── ChatMessage：发给 LLM 的单条消息 ───
 // 文件路径：server/src/services/llmClient.ts
 export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant'   // 联合类型：只能三选一
-  content: string                          // 消息内容
+  role: 'system' | 'user' | 'assistant' | 'tool'
+  content: string | null
+  tool_call_id?: string
+  tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>
 }
 // system：设定 AI 人设（"你是搭子匹配官"）
 // user：用户说的话
@@ -119,19 +121,25 @@ export interface LLMUsage {
 // 文件路径：server/src/services/llmClient.ts
 export interface StreamCallbacks {
   onDelta: (text: string) => void
-  /** 推理模型的思考过程（reasoning_content，DeepSeek-v4-flash 等推理模型专用） */
+  /** 推理模型的思考过程（reasoning_content，仅 deepseek-reasoner 有） */
   onReasoning?: (text: string) => void
   onUsage?: (u: LLMUsage) => void
 }
-// ? 表示可选属性。onDelta 必须传，其他两个可传可不传。
+
+/** tool call 收集 */
+export interface ToolCallDelta {
+  id: string
+  name: string
+  args: string
+}
 
 // ─── ChatResult：一次对话的完整返回 ───
 // 文件路径：server/src/services/llmClient.ts
 export interface ChatResult {
-  text: string          // AI 最终回答（content 字段累计）
-  /** 推理模型的思考过程全文（若有） */
-  reasoning: string     // AI 思考过程（reasoning_content 累计）
-  usage: LLMUsage       // token 用量
+  text: string
+  reasoning: string
+  usage: LLMUsage
+  toolCalls: ToolCallDelta[]
 }
 
 // llmEnabled：是否配置了 API Key（启动时算一次，全局复用）
@@ -140,52 +148,55 @@ export const llmEnabled = config.llm.enabled
 
 /**
  * chatStream() — 流式对话（SSE，逐 token 推送）
- * 文件路径：server/src/services/llmClient.ts → chatStream()
- *
- * 用于：ProfileAgent.streamReplyLLM()（边生成边推给前端）
- *
- * 工作原理：
- *   1. POST 请求 DeepSeek 的 /chat/completions，stream:true
- *   2. 响应是 SSE 格式：一行一行 data: {...}
- *   3. 每来一行，解析 JSON，取 delta.content 调 onDelta
- *   4. 推理模型还有 delta.reasoning_content，调 onReasoning
- *   5. [DONE] 表示结束
  *
  * @param messages - 对话消息数组（system + history）
  * @param cb       - 回调集合（onDelta/onReasoning/onUsage）
- * @param opts     - maxTokens/temperature/signal（可中止）
- * @returns ChatResult - 累计的全文 + 用量
- *
- * @throws Error - 无 Key 或 HTTP 失败时抛错，调用方降级到模板
+ * @param opts     - { maxTokens, temperature, signal, tools, deepThinking }
+ *   - tools: function calling 工具定义数组
+ *   - deepThinking: true=用 deepseek-reasoner（有思考过程）, false=用 deepseek-chat（快速回复）
+ * @returns ChatResult - 累计全文 + reasoning + usage + toolCalls
  */
 export async function chatStream(
   messages: ChatMessage[],
   cb: StreamCallbacks,
-  opts: { maxTokens?: number; temperature?: number; signal?: AbortSignal } = {},
+  opts: {
+    maxTokens?: number
+    temperature?: number
+    signal?: AbortSignal
+    tools?: Array<{ type: string; function: Record<string, unknown> }>
+    deepThinking?: boolean
+  } = {},
 ): Promise<ChatResult> {
-  if (!llmEnabled) {
-    throw new Error('LLM 未配置 API Key')   // 无 Key 直接抛，调用方走降级
-  }
+  if (!llmEnabled) throw new Error('LLM 未配置 API Key')
 
-  // 拼接 API URL：去掉末尾斜杠再拼 /chat/completions
   const url = `${config.llm.apiBase.replace(/\/$/, '')}/chat/completions`
 
-  // 发起 POST 请求（Node 18+ 全局 fetch）
+  // 根据 deepThinking 开关切换模型
+  const model = opts.deepThinking ? 'deepseek-reasoner' : config.llm.model
+
+  const bodyPayload: Record<string, unknown> = {
+    model,
+    messages,
+    max_tokens: opts.maxTokens ?? 8192,
+    temperature: opts.temperature ?? 0.7,
+    stream: true,
+    stream_options: { include_usage: true },
+  }
+
+  // 如果有工具定义，带上 tools
+  if (opts.tools && opts.tools.length > 0) {
+    bodyPayload.tools = opts.tools
+    bodyPayload.tool_choice = 'auto'
+  }
+
   const resp = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${config.llm.apiKey}`,   // Bearer token 鉴权
+      'Authorization': `Bearer ${config.llm.apiKey}`,
     },
-    body: JSON.stringify({
-      model: config.llm.model,                          // 'deepseek-v4-flash'
-      messages,                                         // 对话历史
-      max_tokens: opts.maxTokens ?? 1024,               // ?? 空值合并：没传就用 1024
-      temperature: opts.temperature ?? 0.6,             // 温度：越高越随机
-      stream: true,                                     // 关键：开启流式
-      stream_options: { include_usage: true },          // 流式也返回用量统计
-    }),
-    signal: opts.signal,                                // 支持中止（用户关闭页面）
+    body: JSON.stringify(bodyPayload),
+    signal: opts.signal,
   })
 
   if (!resp.ok || !resp.body) {
@@ -199,6 +210,9 @@ export async function chatStream(
   let full = ''                           // 累计正文
   let reasoning = ''                      // 累计思考过程
   let usage: LLMUsage = { inputTokens: 0, outputTokens: 0 }
+
+  // tool_calls 流式拼装：index → { id, name, args }
+  const toolCallsMap = new Map<number, ToolCallDelta>()
 
   while (true) {
     const { done, value } = await reader.read()   // 读一块
@@ -229,21 +243,34 @@ export async function chatStream(
           reasoning += reasoningDelta
           cb.onReasoning?.(reasoningDelta)         // 推给上层展示在"思考框"
         }
+        // ── function calling：tool_calls 增量拼装 ──
+        const tcArray = choice?.delta?.tool_calls
+        if (tcArray) {
+          for (const tc of tcArray) {
+            const idx = tc.index ?? 0
+            if (!toolCallsMap.has(idx)) toolCallsMap.set(idx, { id: '', name: '', args: '' })
+            const entry = toolCallsMap.get(idx)!
+            if (tc.id) entry.id = tc.id
+            if (tc.function?.name) entry.name += tc.function.name
+            if (tc.function?.arguments) entry.args += tc.function.arguments
+          }
+        }
         // ── token 用量（流式最后一块才带）──
         if (json.usage) {
           usage = {
             inputTokens: json.usage.prompt_tokens || 0,
             outputTokens: json.usage.completion_tokens || 0,
-            // DeepSeek 硬盘缓存字段（自动命中，无需配置）
             cacheHitTokens: json.usage.prompt_cache_hit_tokens || 0,
             cacheMissTokens: json.usage.prompt_cache_miss_tokens || 0,
           }
           cb.onUsage?.(usage)
         }
-      } catch { /* skip malformed 单块解析失败跳过，不影响整体 */ }
+      } catch { /* skip malformed */ }
     }
   }
-  return { text: full, reasoning, usage }
+
+  const toolCalls = [...toolCallsMap.values()].filter(tc => tc.name)
+  return { text: full, reasoning, usage, toolCalls }
 }
 
 /**
@@ -291,5 +318,11 @@ export async function chatOnce(
     cacheHitTokens: json.usage?.prompt_cache_hit_tokens || 0,
     cacheMissTokens: json.usage?.prompt_cache_miss_tokens || 0,
   }
-  return { text, reasoning, usage }
+  const rawToolCalls = json.choices?.[0]?.message?.tool_calls || []
+  const toolCalls = rawToolCalls.map((tc: any) => ({
+    id: tc.id || '',
+    name: tc.function?.name || '',
+    args: tc.function?.arguments || '',
+  }))
+  return { text, reasoning, usage, toolCalls }
 }

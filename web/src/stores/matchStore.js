@@ -8,17 +8,21 @@ export const useMatchStore = defineStore('match', () => {
   const totalCount = ref(0)
   const myProfileText = ref('')
   const loading = ref(false)
-  const icebreakers = ref({})  // { [targetUserId]: { list, source, factors } }
+  const icebreakers = ref({})
   const icebreakerLoading = ref({})
+  const lastConfidence = ref(0)  // 上次匹配时的画像置信度
 
   async function run(limit) {
     loading.value = true
     try {
       const res = await matchApi.run(limit)
-      candidates.value = res.candidates
-      totalCount.value = res.totalCount
-      myProfileText.value = res.myProfileText
+      candidates.value = res.candidates || []
+      totalCount.value = res.totalCount || 0
+      myProfileText.value = res.myProfileText || ''
       return res
+    } catch {
+      // 失败不清空已有结果
+      return null
     } finally {
       loading.value = false
     }
@@ -47,7 +51,7 @@ export const useMatchStore = defineStore('match', () => {
 
   return {
     candidates, totalCount, myProfileText, loading,
-    icebreakers, icebreakerLoading,
+    icebreakers, icebreakerLoading, lastConfidence,
     run, generateIcebreaker, reset,
   }
 })

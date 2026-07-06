@@ -108,6 +108,10 @@ export interface ProfileSnapshot {
   socialStyle: { depth: string; energy: string }   // 社交风格
   schedule: string[]                               // 活跃时段
   goal: string                                     // 找搭子目标
+  city: string                                     // 城市
+  gender: string                                   // 性别偏好
+  ageRange: { min: number; max: number }           // 年龄范围
+  topicVec: number[]                               // 话题向量
 }
 
 /**
@@ -207,6 +211,10 @@ export function recallByVector(
         },
         schedule: pj.schedule || [],
         goal: pj.goal || '',
+        city: pj.city || '',
+        gender: pj.gender || '',
+        ageRange: pj.ageRange || { min: 0, max: 100 },
+        topicVec: pj.topicVec || [],
       }
     } catch {
       // JSON 解析失败 → 给个空画像（容错，不崩）
@@ -217,6 +225,10 @@ export function recallByVector(
         socialStyle: { depth: 'unknown', energy: 'unknown' },
         schedule: [],
         goal: '',
+        city: '',
+        gender: '',
+        ageRange: { min: 0, max: 100 },
+        topicVec: [],
       }
     }
     // 算余弦相似度：我的向量 vs 候选向量

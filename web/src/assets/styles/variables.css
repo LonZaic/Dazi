@@ -244,3 +244,99 @@
 /* ─── 滚动条 ─── */
 [data-theme="light"] ::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.12); }
 [data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.22); }
+
+/* ════════════════════════════════════════════════════════════
+   蓝色主题 — 蓝橙融合：深蓝基底 + 橙紫光晕
+   用于录制视频区分不同用户
+   ════════════════════════════════════════════════════════════ */
+[data-theme="blue"] {
+  color-scheme: dark;
+
+  --accent: #3b82f6;
+  --accent-hover: #60a5fa;
+  --accent-active: #2563eb;
+  --accent-muted: rgba(59, 130, 246, 0.12);
+  --accent-glow: rgba(59, 130, 246, 0.22);
+
+  --body-bg-gradient: radial-gradient(ellipse 60% 60% at 10% 20%, rgba(249,115,22,0.12) 0%, transparent 55%),
+                      radial-gradient(ellipse 50% 70% at 90% 60%, rgba(139,92,246,0.10) 0%, transparent 55%),
+                      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(59,130,246,0.14) 0%, transparent 50%),
+                      radial-gradient(ellipse 35% 30% at 80% 90%, rgba(59,130,246,0.06) 0%, transparent 50%);
+
+  --bg: #0a0e1a;
+  --bg2: #111827;
+  --bg3: #1e293b;
+  --bg4: #334155;
+
+  --border: rgba(148, 163, 184, 0.10);
+  --border2: rgba(148, 163, 184, 0.18);
+
+  --text: #e2e8f0;
+  --text2: #94a3b8;
+  --text3: #64748b;
+
+  --green: #22c55e;
+  --red: #ef4444;
+  --yellow: #f59e0b;
+  --red-muted: rgba(239, 68, 68, 0.12);
+
+  --shadow-md: 0 8px 32px rgba(10, 14, 26, 0.6);
+  --shadow-lg: 0 8px 40px rgba(10, 14, 26, 0.7);
+  --shadow-xl: 0 16px 48px rgba(10, 14, 26, 0.8);
+}
+
+[data-theme="blue"] ::placeholder { color: var(--text3); }
+[data-theme="blue"] ::selection {
+  background: rgba(59, 130, 246, 0.25);
+  color: var(--text);
+}
+[data-theme="blue"] ::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.12); }
+[data-theme="blue"] ::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.24); }
+
+/* ════════════════════════════════════════════════════════════
+   橙色主题 — 橙蓝融合：深棕基底 + 橙蓝紫光晕
+   用于录制视频区分不同用户
+   ════════════════════════════════════════════════════════════ */
+[data-theme="orange"] {
+  color-scheme: dark;
+
+  --accent: #f97316;
+  --accent-hover: #fb923c;
+  --accent-active: #ea580c;
+  --accent-muted: rgba(249, 115, 22, 0.12);
+  --accent-glow: rgba(249, 115, 22, 0.22);
+
+  --body-bg-gradient: radial-gradient(ellipse 60% 60% at 10% 20%, rgba(59,130,246,0.12) 0%, transparent 55%),
+                      radial-gradient(ellipse 50% 70% at 90% 60%, rgba(139,92,246,0.10) 0%, transparent 55%),
+                      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(249,115,22,0.14) 0%, transparent 50%),
+                      radial-gradient(ellipse 35% 30% at 80% 90%, rgba(249,115,22,0.06) 0%, transparent 50%);
+
+  --bg: #1a1008;
+  --bg2: #241a10;
+  --bg3: #3d2e1a;
+  --bg4: #55422a;
+
+  --border: rgba(168, 162, 158, 0.10);
+  --border2: rgba(168, 162, 158, 0.18);
+
+  --text: #e7e5e4;
+  --text2: #a8a29e;
+  --text3: #78716c;
+
+  --green: #22c55e;
+  --red: #ef4444;
+  --yellow: #fbbf24;
+  --red-muted: rgba(239, 68, 68, 0.12);
+
+  --shadow-md: 0 8px 32px rgba(26, 16, 8, 0.6);
+  --shadow-lg: 0 8px 40px rgba(26, 16, 8, 0.7);
+  --shadow-xl: 0 16px 48px rgba(26, 16, 8, 0.8);
+}
+
+[data-theme="orange"] ::placeholder { color: var(--text3); }
+[data-theme="orange"] ::selection {
+  background: rgba(249, 115, 22, 0.25);
+  color: var(--text);
+}
+[data-theme="orange"] ::-webkit-scrollbar-thumb { background: rgba(168, 162, 158, 0.12); }
+[data-theme="orange"] ::-webkit-scrollbar-thumb:hover { background: rgba(168, 162, 158, 0.24); }

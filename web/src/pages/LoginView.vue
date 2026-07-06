@@ -59,7 +59,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppIcon from '../components/common/AppIcon.vue'
 import { useAuthStore } from '../stores/authStore.js'
@@ -68,7 +68,13 @@ const auth = useAuthStore()
 const router = useRouter()
 const route = useRoute()
 
-const colors = ['#141a22','#1c2230','#242a38','#2c3240','#343a48','#3c4250']
+// 马赛克色：跟随主题
+const lightColors = ['#e8ecf4','#dfe4ed','#d6dce6','#cdd4df','#c4ccd8','#bbc4d1']
+const darkColors = ['#141a22','#1c2230','#242a38','#2c3240','#343a48','#3c4250']
+const colors = computed(() => {
+  const theme = document.documentElement.getAttribute('data-theme')
+  return theme === 'dark' || !theme ? darkColors : lightColors
+})
 
 const mode = ref('login')
 const username = ref('')
@@ -150,9 +156,8 @@ async function onSubmit() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--accent-primary), var(--match-warm));
   border-radius: var(--radius-lg);
-  color: white;
+  color: var(--accent-primary, #5b8def);
 }
 .card-title {
   font-size: 22px;

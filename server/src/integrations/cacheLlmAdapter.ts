@@ -143,7 +143,7 @@ export async function chatWithCache(
     onReasoning?: (text: string) => void
     onUsage?: (usage: unknown) => void
   },
-  opts?: { signal?: AbortSignal; maxTokens?: number; temperature?: number },
+  opts?: { signal?: AbortSignal; maxTokens?: number; temperature?: number; deepThinking?: boolean; tools?: Array<{ type: string; function: Record<string, unknown> }>; executeTool?: (name: string, args: Record<string, unknown>) => Promise<string> },
 ): Promise<{ text: string; reasoning: string; usage: unknown }> {
   // ① 拿对话
   const conv = await getOrCreateConversation(userId, sessionId, systemPrompt)
@@ -173,7 +173,7 @@ export async function chatWithCache(
       onReasoning: callbacks?.onReasoning,
       onUsage: callbacks?.onUsage,
     },
-    { signal: opts?.signal, maxTokens: opts?.maxTokens, temperature: opts?.temperature },
+    { signal: opts?.signal, maxTokens: opts?.maxTokens, temperature: opts?.temperature, deepThinking: opts?.deepThinking, tools: opts?.tools, executeTool: opts?.executeTool },
   )
 
   // ⑤ 持久化到 Redis

@@ -56,6 +56,7 @@ export const useChatStore = defineStore('chat', () => {
   const rateRemaining = ref(0)              // 剩余配额
   const rateLimit = ref(0)                  // 总配额
   const error = ref('')                     // 错误信息
+  const deepThinking = ref(false)           // 深度思考模式开关
 
   // ─── 会话管理（多会话）───
   const sessions = ref([])                  // 用户的会话列表（{id,title,createdAt,updatedAt}）
@@ -83,12 +84,25 @@ export const useChatStore = defineStore('chat', () => {
     if (!currentSessionId.value) { messages.value = []; return }
     try {
       const res = await chatApi.sessionMessages(currentSessionId.value)
-      messages.value = res.messages.map(m => ({
-        id: m.id,
-        role: m.role,
-        text: m.content,
-        createdAt: m.createdAt,
-      }))
+      messages.value = res.messages.map(m => {
+        // 从 meta_json 还原文件/图片气泡
+        let files = []
+        let images = []
+        if (m.meta && m.meta.files && m.meta.files.length) {
+          files = m.meta.files
+        }
+        if (m.meta && m.meta.images && m.meta.images.length) {
+          images = m.meta.images
+        }
+        return {
+          id: m.id,
+          role: m.role,
+          text: m.content,
+          createdAt: m.createdAt,
+          files,
+          images,
+        }
+      })
     } catch { /* 忽略 */ }
   }
 
@@ -197,6 +211,29 @@ export const useChatStore = defineStore('chat', () => {
     messages.value[index] = { ...messages.value[index], ...patch }
   }
 
+  // 自增 ID 计数器：避免快速连发时 Date.now() 冲突导致 Vue :key 重复
+  let _msgIdCounter = 0
+  function _nextId(prefix) {
+    _msgIdCounter++
+    return `${prefix}-${Date.now()}-${_msgIdCounter}`
+  }
+
+  /**
+   * pushUserMsg() — 用户消息立刻推到列表（图片/文件立即显示）
+   * 用于 ChatView 在 OCR 完成前就把泡泡+图片推到 UI 上
+   */
+  function pushUserMsg(content, imageDataUrls, filesMeta) {
+    const userMsg = {
+      id: _nextId('u'),
+      role: 'user',
+      text: content.trim(),
+      images: imageDataUrls || [],
+      files: filesMeta || [],
+      createdAt: Math.floor(Date.now() / 1000),
+    }
+    messages.value.push(userMsg)
+  }
+
   /**
    * send() — 发送消息（核心方法）
    *
@@ -214,60 +251,72 @@ export const useChatStore = defineStore('chat', () => {
    *   store 持有 _streamController，stopGeneration() 调 .abort() 即可中断。
    *   fetch 收到 abort 后抛 AbortError，sse.js 的 catch 会忽略它并 resolve。
    */
-  async function send(content, images = []) {
-    if (streaming.value || (!content.trim() && images.length === 0)) return   // 流式中或空消息不发
+  async function send(content, images = [], fileContents = []) {
+    if (streaming.value || (!content.trim() && images.length === 0 && fileContents.length === 0)) return
     error.value = ''
-    // 确保有当前会话（多会话管理）
     if (!currentSessionId.value) await ensureSession()
     if (!currentSessionId.value) { error.value = '会话未就绪，请刷新重试'; return }
 
     const hasImages = images.length > 0
+    const hasFiles = fileContents.length > 0
 
-    // 1. 用户消息立刻塞进列表（不等后端）
-    //    图片只在前端展示（dataURL），不发给后端（太大 + DeepSeek 不识图）
-    const userMsg = {
-      id: `u-${Date.now()}`,
-      role: 'user',
-      text: content.trim(),
-      images: hasImages ? images.map(i => i.data) : [],   // 存 dataURL 数组供 MessageBubble 渲染
-      createdAt: Math.floor(Date.now() / 1000),
-    }
-    messages.value.push(userMsg)
+    // 1. 用户消息立刻塞进列表
+    pushUserMsg(
+      content,
+      hasImages ? images.map(i => i.data) : [],
+      hasFiles ? fileContents.map(f => ({ name: f.name, size: f.size })) : [],
+    )
 
-    // 2. 占位 AI 消息（流式填充），记录索引便于响应式更新
-    const aiId = `a-${Date.now()}`
-    const aiIndex = messages.value.length       // push 前的索引 = push 后该元素的位置
+    // 2. 发送流式请求到服务器
+    await _doSendStream(content.trim(), images.length, fileContents)
+  }
+
+  /**
+   * sendStream() — 仅发流式请求（不推用户消息）
+   * 配合 pushUserMsg()：ChatView 先把泡泡推到列表，再调这里发到服务器
+   */
+  async function sendStream(content, imageCount, fileContents) {
+    if (streaming.value) return
+    error.value = ''
+    if (!currentSessionId.value) await ensureSession()
+    if (!currentSessionId.value) { error.value = '会话未就绪，请刷新重试'; return }
+
+    await _doSendStream(content.trim(), imageCount, fileContents)
+  }
+
+  /** _doSendStream() — 发送 SSE 流式请求（内部实现） */
+  async function _doSendStream(contentText, imageCount, fileContents) {
+    // 占位 AI 消息
+    const aiId = _nextId('a')
+    const aiIndex = messages.value.length
     messages.value.push({
       id: aiId,
       role: 'assistant',
-      text: '',                // 正文（onDelta 累加）
-      reasoning: '',           // 推理过程（onReasoning 累加）
-      streaming: true,         // 标记流式中（UI 显示光标）
+      text: '',
+      reasoning: '',
+      streaming: true,
       createdAt: Math.floor(Date.now() / 1000),
     })
     streaming.value = true
     streamingText.value = ''
     streamingReasoning.value = ''
 
-    // 3. 创建 AbortController 并传给 streamChat（支持停止生成）
-    //    body 带 sessionId（多会话）+ imageCount（图片提示 AI 上下文）
     _streamController = new AbortController()
     await streamChat('/chat/messages', {
-      content: content.trim(),
+      content: contentText,
       sessionId: currentSessionId.value,
-      imageCount: images.length,
+      imageCount: imageCount,
+      deepThinking: deepThinking.value,
+      fileContents: fileContents.map(f => ({ name: f.name, content: f.content, size: f.size })),
     }, {
-      // 推理模型思考过程：累加到 reasoning 字段（响应式更新）
       onReasoning: (delta) => {
         streamingReasoning.value += delta
         _patchAi(aiIndex, { reasoning: streamingReasoning.value })
       },
-      // AI 正文：累加到 text 字段（响应式更新）
       onDelta: (delta) => {
         streamingText.value += delta
         _patchAi(aiIndex, { text: streamingText.value })
       },
-      // 会话元信息：更新置信度/限流
       onMeta: (data) => {
         if (data.profileConfidence !== undefined) profileConfidence.value = data.profileConfidence
         if (data.state) sessionState.value = data.state
@@ -276,19 +325,16 @@ export const useChatStore = defineStore('chat', () => {
           rateLimit.value = data.rateLimit.limit
         }
       },
-      // 流式结束：关闭流式状态，更新最终置信度
       onDone: (data) => {
         _patchAi(aiIndex, { streaming: false })
         if (data.profileConfidence !== undefined) profileConfidence.value = data.profileConfidence
         if (data.state) sessionState.value = data.state
         if (data.canMatch !== undefined) canMatch.value = data.canMatch
-        // 首条消息后端会把会话标题从"新对话"改成摘要，前端本地同步
         const cur = sessions.value.find(s => s.id === currentSessionId.value)
-        if (cur && cur.title === '新对话' && content.trim()) {
-          cur.title = _deriveTitle(content.trim())
+        if (cur && cur.title === '新对话' && contentText) {
+          cur.title = _deriveTitle(contentText)
         }
       },
-      // 出错：关闭流式，显示错误
       onError: (msg) => {
         _patchAi(aiIndex, { streaming: false })
         const cur = messages.value[aiIndex]
@@ -297,7 +343,6 @@ export const useChatStore = defineStore('chat', () => {
       },
     }, _streamController.signal)
 
-    // 流式结束，清理临时状态
     _streamController = null
     streaming.value = false
     streamingText.value = ''
@@ -336,8 +381,8 @@ export const useChatStore = defineStore('chat', () => {
     messages, visibleMessages, streaming, streamingText,
     profileConfidence, sessionState, canMatch,
     rateRemaining, rateLimit, error,
-    sessions, currentSessionId,
-    loadHistory, loadStatus, send, stopGeneration, clearError,
+    sessions, currentSessionId, deepThinking,
+    loadHistory, loadStatus, send, sendStream, pushUserMsg, stopGeneration, clearError,
     loadSessions, ensureSession, createSession, switchSession, renameSession, deleteSession,
   }
 })

@@ -173,6 +173,13 @@ export interface Profile {
                               //   场景：['只在朝阳区', '不要夜跑']
                               //   MatchAgent 用这个过滤掉不合适的候选
                               //
+  city: string                // 城市（用户手动填或从对话抽取）
+                              //   matchAgent 同城加分
+  gender: string              // 性别偏好（''/male/female）
+  ageRange: { min: number; max: number }  // 年龄偏好范围
+                              //   场景：{ min:20, max:35 }
+  topicVec: number[]          // 近期对话话题向量（256 维，和画像向量同维度）
+                              //   matchAgent 用这个比"最近聊啥是不是差不多"
   confidence: number          // 整体画像置信度 0-1
                               //   ≥0.65 才能匹配（orchestrator 触发 PROFILE_READY）
                               //   computeConfidence() 算出来的
@@ -210,6 +217,10 @@ export interface ProfilePatch {
   schedule?: string[]          // 活跃时段
   goal?: string                // 目标
   constraints?: string[]       // 限制条件
+  city?: string                // 城市
+  gender?: string              // 性别偏好
+  ageRange?: { min: number; max: number }  // 年龄范围
+  topicVec?: number[]          // 近期话题向量
 }
 
 // ════════════════════════════════════════════════════════════
@@ -221,12 +232,16 @@ export interface ProfilePatch {
 export function createEmptyProfile(userId: string): Profile {
   return {
     basic: { userId, createdAt: Date.now(), version: 0 },
-    interests: [],  // 空的兴趣列表
-    socialStyle: { energy: 'unknown', depth: 'unknown' },  // 啥都不知道
-    schedule: [],  // 空数组
-    goal: '',      // 空字符串
-    constraints: [],  // 空数组
-    confidence: 0,   // 置信度从 0 开始
+    interests: [],
+    socialStyle: { energy: 'unknown', depth: 'unknown' },
+    schedule: [],
+    goal: '',
+    constraints: [],
+    city: '',
+    gender: '',
+    ageRange: { min: 0, max: 100 },
+    topicVec: [],
+    confidence: 0,
   }
 }
 
@@ -271,6 +286,10 @@ export function applyPatch(profile: Profile, patch: ProfilePatch): Profile {
     //   所以如果 patch.goal = ''（空字符串）也会覆盖
     //   这里用 ?? 因为 LLM 返回的 goal 要么是字符串要么是 undefined
     constraints: patch.constraints ? [...patch.constraints] : [...profile.constraints],
+    city: patch.city ?? profile.city,
+    gender: patch.gender ?? profile.gender,
+    ageRange: patch.ageRange ?? profile.ageRange,
+    topicVec: patch.topicVec ? [...patch.topicVec] : [...(profile.topicVec || [])],
   }
 
   // ② 合并兴趣：如果有新兴趣
@@ -390,6 +409,12 @@ export function computeConfidence(p: Profile): number {
   // ⑥ 时段明确度：有时段 +0.05
   if (p.schedule.length > 0) score += 0.05
 
+  // ⑦ 城市明确度：有城市 +0.03
+  if (p.city) score += 0.03
+
+  // ⑧ 性别偏好明确度：有性别 +0.02
+  if (p.gender) score += 0.02
+
   return Math.min(1, score)  // 上限 1（100%）
   //   Math.min(1, score)：防超 1
   //   场景：score = 1.05 → 返回 1
@@ -437,6 +462,12 @@ export function profileToText(p: Profile): string {
 
   if (p.constraints.length)
     parts.push('限制: ' + p.constraints.join(' '))
+
+  if (p.city)
+    parts.push('城市: ' + p.city)
+
+  if (p.gender)
+    parts.push('性别偏好: ' + p.gender)
 
   return parts.join(' ')  // 用空格把所有片段连起来
   //   场景：['兴趣: 跑步 爬山', '社交能量: introvert'] → '兴趣: 跑步 爬山 社交能量: introvert'

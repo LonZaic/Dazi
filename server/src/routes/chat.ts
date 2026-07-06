@@ -116,6 +116,8 @@ import { getDB } from '../db/index.js'
 import { llmEnabled } from '../services/llmClient.js'
 import { clearTraces, getTraceSummary } from '../core/tracer.js'
 import { profileAdapter } from '../integrations/agentMemoryAdapter.js'
+import { cacheFile } from '../tools/readFile.js'
+import { ALL_TOOLS } from '../tools/index.js'
 
 export const chatRouter = Router()
 const profileAgent = new ProfileAgent()
@@ -221,13 +223,17 @@ chatRouter.get('/sessions/:id/messages', requireAuth, (req, res) => {
     .get(req.params.id, req.user!.id)
   if (!sess) { res.status(404).json({ error: '会话不存在' }); return }
   const rows = db.prepare(`
-    SELECT id, role, content, created_at FROM conversations
+    SELECT id, role, content, created_at, meta_json FROM conversations
     WHERE session_id = ? ORDER BY id ASC
-  `).all(req.params.id) as Array<{ id: number; role: string; content: string; created_at: number }>
+  `).all(req.params.id) as Array<{ id: number; role: string; content: string; created_at: number; meta_json: string | null }>
   res.json({
-    messages: rows.map(r => ({
-      id: String(r.id), role: r.role, content: r.content, createdAt: r.created_at,
-    })),
+    messages: rows.map(r => {
+      let meta = null
+      if (r.meta_json) {
+        try { meta = JSON.parse(r.meta_json) } catch { /* ignore */ }
+      }
+      return { id: String(r.id), role: r.role, content: r.content, createdAt: r.created_at, meta }
+    }),
   })
 })
 
@@ -251,15 +257,14 @@ chatRouter.get('/sessions/:id/messages', requireAuth, (req, res) => {
 chatRouter.post('/messages', requireAuth, async (req, res) => {
   const { content } = req.body || {}
   const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId : ''
-  const imageCount = Math.min(Number(req.body?.imageCount) || 0, 4)   // 用户附带的图片数量（0-4）
-  // 有图片时允许空文字（用户可能只发图），无图片则必须有文字
+  const imageCount = Math.min(Number(req.body?.imageCount) || 0, 4)
+  const deepThinking = !!req.body?.deepThinking
+  const fileContents: Array<{ name: string; content: string; size: number }> = req.body?.fileContents || []
+
+  // 有图片或文件时允许空文字
   const hasText = content && typeof content === 'string' && content.trim().length > 0
-  if (!hasText && imageCount === 0) {
+  if (!hasText && imageCount === 0 && fileContents.length === 0) {
     res.status(400).json({ error: '消息不能为空' })
-    return
-  }
-  if (content && content.length > 2000) {
-    res.status(400).json({ error: '消息过长（上限 2000 字）' })
     return
   }
   // 必须带 sessionId（多会话管理）
@@ -287,18 +292,51 @@ chatRouter.post('/messages', requireAuth, async (req, res) => {
     return
   }
 
-  // 拼接存 DB 的 content：文字 + [图片×N] 提示
+  // 拼接存 DB 的 content：文字 + [图片×N] 提示 + 文件信息
   //   DeepSeek 不识图，但 [图片×N] 让 AI 知道用户发了图（活动记录），
-  //   AI 可据此追问"这张图是在哪拍的？"等，助力了解用户活动偏好。
+  //   AI 可据此追问，或调用 read_file 工具读取文件内容
   const textPart = (content || '').trim()
   const imageHint = imageCount > 0 ? `[用户发送了${imageCount}张图片]` : ''
-  const storedContent = imageHint ? (textPart ? `${textPart} ${imageHint}` : imageHint) : textPart
+  const fileList = fileContents.length > 0 ? `[用户上传了${fileContents.length}个文件: ${fileContents.map(f => f.name).join(', ')}]` : ''
 
-  // 保存用户消息（带 session_id）
+  // ★ 缓存文件内容 → 供 AI read_file 工具调用
+  for (const f of fileContents) {
+    if (f.content && f.content.trim()) {
+      cacheFile(userId, f.name, f.content)
+      console.log(`[chat] 缓存文件: ${f.name} (${f.content.length} 字符)`)
+    } else {
+      console.log(`[chat] 文件无内容，跳过缓存: ${f.name}`)
+    }
+  }
+
+  // ★ 把文件内容拼到 user message，AI 直接读到（不依赖 function calling）
+  // 小文件（≤ 8000 字符）直接内联全文；大文件给前 8000 字符预览，并提示用 read_file 工具读取完整内容
+  const INLINE_MAX = 8000
+  const fileContentHint = fileContents.length > 0
+    ? fileContents.map(f => {
+        if (f.content && f.content.trim()) {
+          if (f.content.length <= INLINE_MAX) {
+            return `\n---\n[文件内容: ${f.name}]\n${f.content}`
+          }
+          const preview = f.content.slice(0, INLINE_MAX)
+          return `\n---\n[文件内容: ${f.name}（共${f.content.length}字符，下面是前${INLINE_MAX}字符预览，完整内容请用 read_file 工具读取）]\n${preview}`
+        }
+        return `\n[文件: ${f.name}，无法读取文本内容]`
+      }).join('\n')
+    : ''
+
+  const storedContent = [textPart, imageHint, fileList, fileContentHint].filter(Boolean).join(' ') || '[用户发送了消息]'
+
+  // 保存用户消息（带 session_id + meta_json 持久化文件气泡）
+  const userMeta = fileContents.length > 0
+    ? JSON.stringify({ 
+        files: fileContents.map(f => ({ name: f.name, size: f.size || 0 })),
+      })
+    : null
   db.prepare(`
-    INSERT INTO conversations (user_id, tenant_id, session_id, role, content)
-    VALUES (?, ?, ?, 'user', ?)
-  `).run(userId, tenantId, sessionId, storedContent)
+    INSERT INTO conversations (user_id, tenant_id, session_id, role, content, meta_json)
+    VALUES (?, ?, ?, 'user', ?, ?)
+  `).run(userId, tenantId, sessionId, storedContent, userMeta)
 
   // ★ 写 Layer 1（短期会话记忆）：ProfileAgent 下次读历史不用查 DB
   //   cache 模块管理对话上下文（发给 LLM），Layer 1 管理任务上下文（画像抽取）
@@ -312,15 +350,7 @@ chatRouter.post('/messages', requireAuth, async (req, res) => {
     db.prepare(`UPDATE chat_sessions SET updated_at = unixepoch() WHERE id = ?`).run(sessionId)
   }
 
-  // 加载当前会话最近对话（含本轮）— 按 session_id 查，保证对话连贯
-  const rows = db.prepare(`
-    SELECT role, content FROM conversations
-    WHERE session_id = ? ORDER BY id DESC LIMIT 20
-  `).all(sessionId) as Array<{ role: string; content: string }>
-  const recent: RecentMessage[] = rows.reverse().map(r => ({
-    role: r.role as 'user' | 'assistant',
-    content: r.content,
-  }))
+  // 对话历史由缓存模块（cacheLlmAdapter）维护，无需从DB加载上下文
 
   // SSE 头
   res.setHeader('Content-Type', 'text/event-stream')
@@ -359,14 +389,15 @@ chatRouter.post('/messages', requireAuth, async (req, res) => {
       })
 
       const result = await profileAgent.streamReply(
-        recent,
+        [{ role: 'user', content: textPart }],
         profile || createEmptyFor(userId),
         (delta) => { if (!aborted) sse(res, 'delta', { text: delta }) },
         ctx,
-        abortCtrl.signal,                // 传 abort 信号，停止生成时中断 LLM 流
-        // 推理模型思考过程流式推送（前端展示在"思考"框里）
+        abortCtrl.signal,
         (reasoningDelta) => { if (!aborted) sse(res, 'reasoning', { text: reasoningDelta }) },
-        sessionId,                       // ★ 传 sessionId 给 cache 模块（省钱关键）
+        sessionId,
+        deepThinking,
+        fileContents.length > 0 ? ALL_TOOLS : undefined,
       )
       const replyText = result.text
 
@@ -395,7 +426,7 @@ chatRouter.post('/messages', requireAuth, async (req, res) => {
 
     // 4. 异步抽取画像 patch（不阻塞已结束的 SSE，失败不影响回复）
     //    推理模型慢，这里 fire-and-forget，下次对话时画像已更新
-    profileAgent.run({ recentMessages: recent }, ctx)
+    profileAgent.run({ recentMessages: [{ role: 'user', content: textPart }] }, ctx)
       .then((result) => {
         if (result.ok && result.data) {
           transition(ctx, { type: 'profile_updated', confidence: result.data.confidence })
@@ -412,16 +443,23 @@ chatRouter.post('/messages', requireAuth, async (req, res) => {
 chatRouter.get('/history', requireAuth, (req, res) => {
   const db = getDB()
   const rows = db.prepare(`
-    SELECT id, role, content, created_at FROM conversations
+    SELECT id, role, content, created_at, meta_json FROM conversations
     WHERE user_id = ? ORDER BY id ASC LIMIT 200
-  `).all(req.user!.id) as Array<{ id: number; role: string; content: string; created_at: number }>
+  `).all(req.user!.id) as Array<{ id: number; role: string; content: string; created_at: number; meta_json: string | null }>
   res.json({
-    messages: rows.map(r => ({
-      id: String(r.id),
-      role: r.role,
-      content: r.content,
-      createdAt: r.created_at,
-    })),
+    messages: rows.map(r => {
+      let meta = null
+      if (r.meta_json) {
+        try { meta = JSON.parse(r.meta_json) } catch { /* ignore */ }
+      }
+      return {
+        id: String(r.id),
+        role: r.role,
+        content: r.content,
+        createdAt: r.created_at,
+        meta,
+      }
+    }),
   })
 })
 

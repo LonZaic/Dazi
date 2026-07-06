@@ -223,10 +223,11 @@ export function initSchema(): void {
     -- ─── 私信消息 ───
     CREATE TABLE IF NOT EXISTS dm_messages (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      room_id     TEXT NOT NULL REFERENCES dm_rooms(id) ON DELETE CASCADE,  -- 删房间自动删消息
+      room_id     TEXT NOT NULL REFERENCES dm_rooms(id) ON DELETE CASCADE,
       tenant_id   TEXT NOT NULL,
-      sender_id   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,     -- 发送者
-      content     TEXT NOT NULL,            -- 消息内容
+      sender_id   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      content     TEXT NOT NULL,            -- 消息文本内容
+      meta_json   TEXT DEFAULT '{}',         -- 附件: {images:[dataURL,...], files:[{name,size,type,content},...]}
       created_at  INTEGER NOT NULL DEFAULT (unixepoch()),
       read_at     INTEGER                   -- NULL=未读，时间戳=已读时间
     );
@@ -245,6 +246,12 @@ export function initSchema(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_chat_sessions_user ON chat_sessions(user_id, updated_at);
   `)
+
+  // ─── 迁移：dm_messages 加 meta_json 列（老库没有）───
+  const dmCols = db.prepare('PRAGMA table_info(dm_messages)').all() as Array<{ name: string }>
+  if (!dmCols.some(c => c.name === 'meta_json')) {
+    db.exec("ALTER TABLE dm_messages ADD COLUMN meta_json TEXT DEFAULT '{}'")
+  }
 
   // ─── 迁移：给 conversations 加 session_id 列（老库没有）───
   // SQLite 不支持 ADD COLUMN IF NOT EXISTS，用 PRAGMA table_info 检查

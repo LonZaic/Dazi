@@ -96,7 +96,7 @@
 // ============================================================
 
 import { BaseAgent, type AgentContext } from './baseAgent.js'
-import { recallByVector, type ProfileSnapshot } from '../db/vectorStore.js'
+import { recallByVector, cosine, type ProfileSnapshot } from '../db/vectorStore.js'
 import type { Profile } from './profileSchema.js'
 import { profileToText } from './profileSchema.js'
 import { embed } from '../services/embedding.js'
@@ -119,15 +119,19 @@ export interface MatchCandidate {
   mbtiCompat?: MbtiCompatFactor  // MBTI 兼容度详情（含对方类型/昵称，搭子卡徽章用）
 }
 
-// 【interface】6 维匹配因子 — 从 6 个角度打分
+/** 10 维匹配因子 — 从 10 个角度打分 */
 // 文件路径：server/src/agents/matchAgent.ts
 export interface MatchFactors {
-  vector: number       // 向量相似度 0-1（画像"指纹"像不像）
-  interest: number     // 兴趣重合 0-1（共同爱好多不多）
-  style: number        // 社交风格匹配 0-1（内向 vs 外向等）
-  schedule: number     // 时段重合 0-1（都在周末活跃？）
-  goal: number         // 目标互补 0-1（都想找同类型搭子？）
-  mbti: number         // MBTI 兼容度 0-1（思维方式互补，第 6 维）
+  vector: number
+  interest: number
+  style: number
+  schedule: number
+  goal: number
+  mbti: number
+  city: number
+  topicVec: number
+  ageRange: number
+  gender: number
 }
 
 // 【interface】匹配输入
@@ -162,11 +166,20 @@ export class MatchAgent extends BaseAgent<MatchAgentInput, MatchAgentOutput> {
     const entry = ctx.blackboard.read('latest_profile')
     const myProfile = entry?.value as Profile | undefined
     if (!myProfile || myProfile.interests.length === 0) {
-      // 没画像 → 没法匹配，返回空列表
       endSpan({ result: 'no_profile' })
       return { candidates: [], totalCount: 0, myProfileText: '' }
     }
-    const myText = profileToText(myProfile)  // 画像 → 自然语言文本
+    // 合并 user_home 手动设置的城市/性别/年龄
+    try {
+      const db = getDB()
+      const homeRow = db.prepare('SELECT city, gender_pref, age_range FROM user_home WHERE user_id = ?').get(ctx.userId) as any
+      if (homeRow) {
+        if (homeRow.city) myProfile.city = homeRow.city
+        if (homeRow.gender_pref) myProfile.gender = homeRow.gender_pref
+        if (homeRow.age_range) { try { myProfile.ageRange = JSON.parse(homeRow.age_range) } catch {} }
+      }
+    } catch {}
+    const myText = profileToText(myProfile)
     addStep('info', { event: 'profile_loaded', interests: myProfile.interests.length })
 
     // ② 我的画像文本 → 1536 维向量（通过 embedding 模型）
@@ -182,8 +195,21 @@ export class MatchAgent extends BaseAgent<MatchAgentInput, MatchAgentOutput> {
       return { candidates: [], totalCount: 0, myProfileText: myText }
     }
 
+    // ③b ★ Layer 3 记忆去重：排除已在近期推荐列表中的候选（用 MemoryBus 读）
+    const excludedIds = matchAdapter.getExcludedCandidates(ctx.userId)
+    const screened = excludedIds.length > 0
+      ? recalled.filter(r => !excludedIds.includes(r.userId))
+      : recalled
+    if (excludedIds.length > 0) {
+      addStep('info', { event: 'memory_dedup', excluded: excludedIds.length, remaining: screened.length })
+    }
+    if (screened.length === 0) {
+      endSpan({ result: 'all_excluded' })
+      return { candidates: [], totalCount: 0, myProfileText: myText }
+    }
+
     // ④ 多因子排序：对每个召回的候选算 6 维因子，加权综合分
-    const candidates = recalled.map(r => {
+    const candidates = screened.map(r => {
       // 算 MBTI 兼容度（第 6 维，从 mbtiProfileAdapter 拿双方 MBTI 画像）
       const mbtiCompat = computeMbtiFactor(ctx.userId, r.userId)
       // 算 6 维因子分数（含 mbti）
@@ -243,36 +269,43 @@ export class MatchAgent extends BaseAgent<MatchAgentInput, MatchAgentOutput> {
 // 【函数】计算 6 维匹配因子
 // 文件路径：server/src/agents/matchAgent.ts → computeFactors()
 function computeFactors(
-  my: { interests: any[]; socialStyle: any; schedule: string[]; goal: string },
+  my: { interests: any[]; socialStyle: any; schedule: string[]; goal: string; city: string; gender: string; ageRange: { min: number; max: number }; topicVec: number[] },
   theirs: ProfileSnapshot,
-  vectorScore: number,      // 向量库里算好的余弦相似度
-  mbtiScore: number,        // MBTI 兼容度（computeMbtiFactor 算好的）
+  vectorScore: number,
+  mbtiScore: number,
 ): MatchFactors {
   return {
-    vector: clamp01(vectorScore),  // 直接取预计算的向量相似度
+    vector: clamp01(vectorScore),
     interest: interestOverlap(
-      my.interests.map((i: any) => i.name),  // 我的所有兴趣名字
-      theirs.interests                         // 对方的兴趣列表
+      my.interests.map((i: any) => i.name),
+      theirs.interests
     ),
     style: styleMatch(my.socialStyle, theirs.socialStyle),
     schedule: scheduleOverlap(my.schedule, theirs.schedule),
     goal: goalComplement(my.goal, theirs.goal),
-    mbti: clamp01(mbtiScore),  // 第 6 维：MBTI 兼容度
+    mbti: clamp01(mbtiScore),
+    city: cityMatch(my.city, theirs.city),
+    topicVec: topicVecSimilarity(my.topicVec || [], theirs.topicVec || []),
+    ageRange: ageRangeMatch(my.ageRange || { min: 0, max: 100 }, theirs.ageRange || { min: 0, max: 100 }),
+    gender: genderMatch(my.gender, theirs.gender),
   }
 }
 
 // 【函数】加权综合分 — 6 维因子 * 各自权重，加起来
 // 文件路径：server/src/agents/matchAgent.ts → weightedScore()
 function weightedScore(f: MatchFactors): number {
-  const w = config.match.weights  // 权重在 config/index.ts 里，默认:
-  //   { vector: 0.35, interest: 0.20, style: 0.15, schedule: 0.10, goal: 0.05, mbti: 0.15 }
+  const w = config.match.weights
   return clamp01(
-    w.vector   * f.vector   +   // 向量相似度 × 0.35（权重最大）
-    w.interest * f.interest +   // 兴趣重合 × 0.20
-    w.style    * f.style    +   // 风格匹配 × 0.15
-    w.schedule * f.schedule +   // 时段重合 × 0.10
-    w.goal     * f.goal     +   // 目标互补 × 0.05
-    w.mbti     * f.mbti        // MBTI 兼容 × 0.15（第 6 维）
+    w.vector   * f.vector   +
+    w.interest * f.interest +
+    w.style    * f.style    +
+    w.schedule * f.schedule +
+    w.goal     * f.goal     +
+    w.mbti     * f.mbti     +
+    w.city     * f.city     +
+    w.topicVec * f.topicVec +
+    w.ageRange * f.ageRange +
+    w.gender   * f.gender
   )
 }
 
@@ -429,6 +462,41 @@ function persistMatches(
     }
   })
   tx(candidates)  // 执行事务
+}
+
+// ─── 新增 4 维因子函数 ───
+
+/** 城市匹配：同城=1，不同=0，未知给中间分 */
+function cityMatch(a: string, b: string): number {
+  if (!a || !b) return 0.3
+  return a.trim().toLowerCase() === b.trim().toLowerCase() ? 1 : 0
+}
+
+/** 话题向量相似度：余弦相似度 */
+function topicVecSimilarity(a: number[], b: number[]): number {
+  if (!a.length || !b.length) return 0.3
+  return clamp01(cosine(a, b))
+}
+
+/** 年龄区间重叠度 */
+function ageRangeMatch(a: { min: number; max: number }, b: { min: number; max: number }): number {
+  if (!a || !b) return 0.3
+  if (a.min <= 0 && a.max >= 100) return 0.3  // 未设置
+  if (b.min <= 0 && b.max >= 100) return 0.3
+  const overlapStart = Math.max(a.min, b.min)
+  const overlapEnd = Math.min(a.max, b.max)
+  if (overlapStart >= overlapEnd) return 0
+  const overlapSize = overlapEnd - overlapStart
+  const rangeA = a.max - a.min
+  const rangeB = b.max - b.min
+  const smallerRange = Math.min(rangeA, rangeB)
+  return clamp01(overlapSize / smallerRange)
+}
+
+/** 性别偏好匹配 */
+function genderMatch(a: string, b: string): number {
+  if (!a || !b) return 0.5
+  return a === b ? 1 : 0
 }
 
 // 【工具函数】把数字夹在 0-1 之间

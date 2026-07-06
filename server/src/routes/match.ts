@@ -146,7 +146,10 @@ matchRouter.post('/icebreaker', requireAuth, async (req, res) => {
     return
   }
 
-  // ③ 状态机转移 → ICEBREAKING
+  // ④ ★ Layer 4 记忆读：拿已用过的话题（避免 IceBreaker 重复话题）
+  const usedTopics = iceBreakerAdapter.getUsedTopics(ctx.userId)
+
+  // ⑤ 状态机转移 → ICEBREAKING
   transition(ctx, { type: 'icebreak_requested' })
 
   // ④ 跑破冰 Agent（LLM 生成/模板生成破冰话术）
@@ -157,6 +160,7 @@ matchRouter.post('/icebreaker', requireAuth, async (req, res) => {
     commonInterests: targetProfile.interests.filter((i: string) =>
       myProfile.interests.some(mi => mi.name.toLowerCase() === i.toLowerCase())), // 共同兴趣
     matchScore: matchRow.score,                             // 匹配分数
+    usedTopics,                                            // ★ Layer 4：已用过话题，避免重复
   }, ctx)
   transition(ctx, { type: 'icebreak_done' })  // 状态转移 → ICEBROKEN
 

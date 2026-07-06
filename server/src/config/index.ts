@@ -131,13 +131,17 @@ export const config = {
   match: {
     topK: 20,            // 向量召回取前多少候选
     finalN: 5,           // 最终返回几个候选给用户
-    weights: {           // 6 维因子的权重（加起来 = 1.0，归一化在 weightedScore 内）
-      vector: 0.35,      // 向量相似度权重（最重要，整体气质合拍）
-      interest: 0.20,    // 兴趣重合权重
-      style: 0.15,       // 社交风格匹配权重
-      schedule: 0.10,    // 时段重合权重
-      goal: 0.05,        // 目标互补权重（最轻）
-      mbti: 0.15,        // MBTI 兼容度权重（思维方式互补，第 6 维）
+    weights: {           // 10 维因子的权重（加起来 = 1.0）
+      vector: 0.25,      // 向量相似度
+      interest: 0.18,    // 兴趣重合
+      style: 0.12,       // 社交风格匹配
+      schedule: 0.08,    // 时段重合
+      goal: 0.06,        // 目标互补
+      mbti: 0.10,        // MBTI 兼容度
+      city: 0.08,        // 城市匹配（同城加分）
+      topicVec: 0.08,    // 话题向量相似度
+      ageRange: 0.03,    // 年龄区间重叠度
+      gender: 0.02,      // 性别偏好匹配
     },
     minConfidence: 0.4,  // 画像字段置信度 < 0.4 不参与匹配加权
   },

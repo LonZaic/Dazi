@@ -1,6 +1,8 @@
 // 各业务 API 聚合
 import { api } from './client.js'
 
+export { api }
+
 export const authApi = {
   register: (username, password, displayName) =>
     api.post('/auth/register', { username, password, displayName }),
@@ -40,8 +42,11 @@ export const dmApi = {
   // 拉某房间的消息历史（增量：since=N 表示 id > N）
   messages: (roomId, since = 0, limit = 50) =>
     api.get(`/dm/rooms/${roomId}/messages?since=${since}&limit=${limit}`),
-  // 发消息
-  send: (roomId, content) => api.post(`/dm/rooms/${roomId}/messages`, { content }),
+  // 发消息（支持纯文字或 {content, images, files}）
+  send: (roomId, payload) => {
+    const body = typeof payload === 'string' ? { content: payload } : payload
+    return api.post(`/dm/rooms/${roomId}/messages`, body)
+  },
   // 标记已读
   markRead: (roomId) => api.post(`/dm/rooms/${roomId}/read`),
 }

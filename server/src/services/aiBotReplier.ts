@@ -211,6 +211,13 @@ export function getBotProfileByUserId(userId: string): BotProfile | undefined {
 // ════════════════════════════════════════════════════════════
 
 /**
+ * 房间级互斥锁：防止同一房间并发触发多次 replyToUser 导致重复回复。
+ * 当用户快速连发两条，或 DM 轮询 + POST 同时触发时，
+ * 只有第一个调用执行，后续调用看到锁直接跳过。
+ */
+const _replyLocks = new Set<string>()
+
+/**
  * replyToUser() — Bot 收到用户消息后，生成回复并写入 DB
  *
  * @param botUserId   - Bot 的用户 ID
@@ -224,7 +231,7 @@ export function getBotProfileByUserId(userId: string): BotProfile | undefined {
  *   3. 调 DeepSeek chatStream 生成回复
  *   4. 写入 dm_messages（SSE 会推送给用户）
  *
- * 注意：异步执行，不阻塞 POST 响应
+ * 注意：异步执行，不阻塞 POST 响应；同一房间互斥防重复回复
  */
 export async function replyToUser(
   botUserId: string,
@@ -232,6 +239,12 @@ export async function replyToUser(
   roomId: string,
   tenantId: string,
 ): Promise<void> {
+  // ★ 防重复：如果该房间已有正在执行的回复，直接跳过
+  if (_replyLocks.has(roomId)) {
+    console.log(`[aiBot] 房间 ${roomId} 已有回复进行中，跳过重复调用`)
+    return
+  }
+
   const profile = getBotProfileByUserId(botUserId)
   if (!profile) return
 
@@ -242,6 +255,12 @@ export async function replyToUser(
     SELECT sender_id, content FROM dm_messages
     WHERE room_id = ? ORDER BY id DESC LIMIT 10
   `).all(roomId) as Array<{ sender_id: string; content: string }>
+
+  // ★ 如果 Bot 已经回复了最新消息（sender_id 是 bot），跳过
+  if (history.length > 0 && history[0].sender_id === botUserId) {
+    console.log(`[aiBot] 房间 ${roomId} Bot 已回复过最新消息，跳过`)
+    return
+  }
 
   const messages: ChatMessage[] = [
     { role: 'system', content: profile.systemPrompt },
@@ -255,6 +274,9 @@ export async function replyToUser(
 
   // 是否是该房间第一条交互（历史只有发消息这一条） → 发打招呼
   const isFirstContact = history.length <= 1
+
+  // ★ 设置房间锁
+  _replyLocks.add(roomId)
 
   try {
     let replyText = ''
@@ -286,5 +308,8 @@ export async function replyToUser(
     db.prepare('UPDATE dm_rooms SET last_message_at = ? WHERE id = ?').run(now, roomId)
   } catch (err: any) {
     console.warn(`[aiBot] 回复失败 (${profile.displayName}):`, err?.message ?? err)
+  } finally {
+    // ★ 释放房间锁
+    _replyLocks.delete(roomId)
   }
 }

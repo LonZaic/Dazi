@@ -20,8 +20,10 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { dmApi } from '../api/index.js'
 import { streamDm } from '../api/sse.js'
+import { useAuthStore } from './authStore.js'
 
 export const useDmStore = defineStore('dm', () => {
+  const auth = useAuthStore()
   // ─── 响应式状态 ───
   const rooms = ref([])                  // 私信房间列表
   const currentRoomId = ref('')          // 当前打开的房间
@@ -32,6 +34,7 @@ export const useDmStore = defineStore('dm', () => {
   const error = ref('')                  // 错误信息
   const connected = ref(false)           // SSE 是否连上
   let streamHandle = null                // SSE 连接句柄（不响应式）
+  let notifyHandle = null                // 全局通知 SSE（app 级，常驻）
   let lastMsgId = 0                      // 已收到最新消息 id（增量游标）
 
   const totalUnread = computed(() =>
@@ -89,13 +92,16 @@ export const useDmStore = defineStore('dm', () => {
       loading.value = false
     }
 
-    // 开 SSE 长连接
+    // 开 SSE 长连接（轮询 → SSE message 事件）
     connected.value = false
     streamHandle = streamDm(`/dm/rooms/${roomId}/stream?since=${lastMsgId}`, {
       onMessage: (msg) => {
-        messages.value.push(normalizeMsg(msg))
+        const normalized = normalizeMsg(msg)
+        if (messages.value.some(m => m.id === normalized.id)) return
+        messages.value.push(normalized)
         const idNum = Number(msg.id)
         if (idNum > lastMsgId) lastMsgId = idNum
+        freshRooms()
       },
       onReconnect: () => {
         connected.value = false
@@ -119,11 +125,33 @@ export const useDmStore = defineStore('dm', () => {
   }
 
   /**
-   * sendMessage(content) — 发消息
+   * freshRooms() — 后台刷新房间列表（不显示 loading）
+   *   每次收到 SSE 消息 / 发完消息后静默刷新
+   */
+  async function freshRooms() {
+    try {
+      const res = await dmApi.rooms()
+      // 保留当前房间的未读归零状态
+      const curId = currentRoomId.value
+      rooms.value = (res.rooms || []).map(r => {
+        if (r.roomId === curId) return { ...r, unreadCount: 0 }
+        return r
+      })
+    } catch { /* 静默忽略 */ }
+  }
+
+  /**
+   * sendMessage(contentOrPayload) — 发消息
+   *   支持纯文字或 {text, images, files} 对象
    *   乐观更新：先塞列表（UI 秒显），后端失败回滚
    */
-  async function sendMessage(content) {
-    if (!currentRoomId.value || !content.trim() || sending.value) return
+  async function sendMessage(contentOrPayload) {
+    if (!currentRoomId.value || sending.value) return
+    const text = typeof contentOrPayload === 'string' ? contentOrPayload : (contentOrPayload?.text || '')
+    const images = typeof contentOrPayload === 'string' ? [] : (contentOrPayload?.images || [])
+    const files = typeof contentOrPayload === 'string' ? [] : (contentOrPayload?.files || [])
+    if (!text.trim() && images.length === 0 && files.length === 0) return
+
     sending.value = true
     error.value = ''
 
@@ -131,8 +159,10 @@ export const useDmStore = defineStore('dm', () => {
     const tempId = `temp-${Date.now()}`
     const optimistic = {
       id: tempId,
-      senderId: 'me',
-      content: content.trim(),
+      senderId: auth.user?.id || 'me',
+      content: text.trim(),
+      images: images.map(i => i.data || i),
+      files: files.map(f => ({ name: f.name, size: f.size || f.size, type: f.type })),
       createdAt: Math.floor(Date.now() / 1000),
       read: false,
       pending: true,
@@ -140,7 +170,11 @@ export const useDmStore = defineStore('dm', () => {
     messages.value.push(optimistic)
 
     try {
-      const res = await dmApi.send(currentRoomId.value, content.trim())
+      const res = await dmApi.send(currentRoomId.value, {
+        content: text.trim(),
+        images: images.map(i => i.data || i),
+        files: files.map(f => ({ name: f.name, size: f.size || 0, type: f.type || '', content: f.content || '' })),
+      })
       // 替换 tempId 为真实 id
       const idx = messages.value.findIndex(m => m.id === tempId)
       if (idx >= 0) {
@@ -148,19 +182,14 @@ export const useDmStore = defineStore('dm', () => {
           ...optimistic,
           id: res.message.id,
           senderId: res.message.senderId,
+          images: res.message.images || [],
+          files: res.message.files || [],
           createdAt: res.message.createdAt,
           pending: false,
         }
       }
-      // 刷新房间列表的 lastContent/lastMessageAt
-      const r = rooms.value.find(x => x.roomId === currentRoomId.value)
-      if (r) {
-        r.lastContent = content.trim()
-        r.lastSenderId = 'me'
-        r.lastMessageAt = res.message.createdAt
-      }
+      await freshRooms()
     } catch (e) {
-      // 回滚：删掉乐观消息
       const idx = messages.value.findIndex(m => m.id === tempId)
       if (idx >= 0) messages.value.splice(idx, 1)
       error.value = e.message || '发送失败'
@@ -203,10 +232,37 @@ export const useDmStore = defineStore('dm', () => {
     error.value = ''
   }
 
+  /**
+   * startNotify() — 开启全局 DM 通知 SSE（app 启动时调一次）
+   *   监听所有房间新消息，实时刷新侧栏未读 + 房间列表
+   */
+  function startNotify() {
+    if (notifyHandle) return
+    notifyHandle = streamDm('/dm/notify?since=0', {
+      onMessage: (msg) => {
+        // 收到任意房间的新消息 → 静默刷新房间列表（含未读数）
+        freshRooms()
+        // 如果当前正在这个房间，消息已由 openRoom 的 SSE 处理，这里不重复
+      },
+      onReconnect: () => { /* 静默重连 */ },
+    })
+  }
+
+  /**
+   * stopNotify() — 关闭全局通知（登出时调）
+   */
+  function stopNotify() {
+    if (notifyHandle) {
+      notifyHandle.close()
+      notifyHandle = null
+    }
+  }
+
   return {
     rooms, currentRoomId, currentOtherUser, messages,
     loading, sending, error, connected, totalUnread,
-    loadRooms, openRoom, closeRoom, sendMessage, startRoomWith, clearError,
+    loadRooms, openRoom, closeRoom, sendMessage, startRoomWith, freshRooms, clearError,
+    startNotify, stopNotify,
   }
 })
 
@@ -215,6 +271,8 @@ function normalizeMsg(m) {
     id: String(m.id),
     senderId: m.senderId,
     content: m.content,
+    images: m.images || [],
+    files: m.files || [],
     createdAt: m.createdAt,
     read: !!m.read,
   }

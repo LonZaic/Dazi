@@ -127,6 +127,7 @@ export interface IceBreakerInput {
   myInterests: string[]           // 我的兴趣列表
   commonInterests: string[]       // 共同兴趣
   matchScore: number              // 匹配分（0-1，告诉破冰师有多合拍）
+  usedTopics?: string[]           // ★ Layer 4 记忆：已用过的话题，避免重复
 }
 
 // 【interface】破冰师的输出 — 3 条话术 + 来源标记
@@ -177,6 +178,9 @@ export class IceBreakerAgent extends BaseAgent<IceBreakerInput, IceBreakerOutput
   // 文件路径：server/src/agents/iceBreakerAgent.ts → IceBreakerAgent.generateLLM()
   private async generateLLM(input: IceBreakerInput, ctx: AgentContext): Promise<string[]> {
     // ① 构造 system prompt：告诉 LLM 怎么干活
+    const avoidTopicHint = input.usedTopics?.length
+      ? `\n5. 以下话题已经被使用过，请完全不要重复：${input.usedTopics.map(t => `"${t}"`).join('、')}`
+      : ''
     const sys: ChatMessage = {
       role: 'system',
       content: `你是社交破冰话术专家。根据双方画像生成3条破冰开场白，帮用户自然地开启对话。
@@ -185,7 +189,7 @@ export class IceBreakerAgent extends BaseAgent<IceBreakerInput, IceBreakerOutput
 1. 每条不超过30字，口语化、有温度
 2. 3条风格不同：一条基于共同兴趣、一条轻松幽默、一条真诚直接
 3. 不要用"你好""在吗"等无效开场
-4. 输出 JSON 数组格式：["话术1","话术2","话术3"]`,
+4. 输出 JSON 数组格式：["话术1","话术2","话术3"]${avoidTopicHint}`,
     }
 
     // ② 构造 user message：只传画像标签，不传对话原文（隐私保护）
